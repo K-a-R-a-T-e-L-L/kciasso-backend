@@ -48,3 +48,14 @@ npm run prisma:seed
 
 - `DOKPLOY_API_KEY`
 - `DOKPLOY_APPLICATION_ID`
+
+## Production bootstrap
+
+Контейнер при старте:
+
+- проверяет, существует ли база из `DATABASE_URL`;
+- при необходимости создаёт её через подключение к `postgres`;
+- выполняет `prisma migrate deploy`;
+- при `RUN_SEED_ON_BOOT=true` дополнительно запускает `prisma db seed`.
+
+Если на сервере для пользователя БД нет прав на `CREATE DATABASE`, базу нужно создать заранее либо выдать эти права.
