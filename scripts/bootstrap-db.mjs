@@ -1,4 +1,6 @@
-import { Client } from 'pg'
+import pg from 'pg'
+
+const { Client } = pg
 
 function getDatabaseName(databaseUrl) {
     const pathname = databaseUrl.pathname.replace(/^\/+/, '')
