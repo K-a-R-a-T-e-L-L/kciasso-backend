@@ -18,7 +18,7 @@ export function PaginatedDocs<DTO>(
     return applyDecorators(
         ApiQuery({ name: 'page', required: false, type: () => Number }),
         ApiQuery({ name: 'limit', required: false, type: () => Number }),
-        ApiQuery({ name: 'search', required: false, type: () => String, description: 'Шашлык' }),
+        ApiQuery({ name: 'search', required: false, type: () => String, description: 'Search query' }),
         ApiQuery({ name: 'sort', required: false, type: () => String, description: 'ASC' }),
         ApiQuery({ name: 'sortField', required: false, type: () => String, description: 'id' }),
         ApiOkResponse({

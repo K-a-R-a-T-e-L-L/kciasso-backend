@@ -1,60 +1,50 @@
-# 🌈🚀 **СУПЕР МЕГА ГАЙД ОТ ALEXLNOS ПО ЗАПУСКУ ПРОЕКТА!** 🚀🌈
+# kciasso-backend
 
-*Добро пожаловать в удивительный мир разработки с **alexlnos**! Приготовьтесь к путешествию во времени в стиль 2000-х!*
+Backend foundation для сайта ГКУ "КЦИАССО" на NestJS, Prisma и PostgreSQL.
 
----
-
-## 💾📀 **ШАГ 1: УСТАНОВКА СУПЕР ЗАВИСИМОСТЕЙ** 📀💾
+## Быстрый старт
 
 ```bash
 npm install
-```
-
----
-
-## 🎉✨ **ШАГ 2: МАГИЯ PRISMA ОТ ALEXLNOS** ✨🎉
-
-```bash
-prisma generate
-prisma db push
-```
-
----
-
-## 🔥🌟 **ШАГ 3: ЗАПУСК СУПЕР-ПУПЕР ПРОЕКТА ОТ ALEXLNOS** 🌟🔥
-
-```bash
+cp .env.example .env
+npx prisma generate
 npm run start:dev
 ```
 
----
+## Полезные команды
 
-## 🛸👾 **ШАГ 4: НАСЛАЖДАЕМСЯ КРУТЫМ ПРОЕКТОМ ALEXLNOS** 👾🛸
+```bash
+npx prisma validate
+npx prisma generate
+npm run build
+npm run prisma:seed
+```
 
-*Время погрузиться в крутую разработку с **alexlnos**!*
+## Swagger
 
----
+- UI: `/api/docs`
+- OpenAPI JSON: `/api/docs-json`
 
-# 🎊🌌 **ПОЗДРАВЛЯЕМ! ВЫ СДЕЛАЛИ ЭТО С ALEXLNOS!** 🌌🎊
+## CI/CD
 
-*Спасибо, что выбрали **alexlnos** для этого невероятного приключения! Не забывайте делиться впечатлениями!*
+В проект добавлен GitHub Actions workflow:
 
----
+- `.github/workflows/deploy.yml`
 
-*Создано с ❤️ и JavaScript от **alexlnos**.*
+Он работает по схеме, как в `portfolio-backend`:
 
----
+- на push в `master` собирает Docker image;
+- пушит image в GHCR;
+- вызывает Dokploy deploy webhook.
 
-# 🌠💫 **ALEXLNOS FOREVER!** 💫🌠
+Для работы pipeline должны быть настроены:
 
----
+### GitHub Variables
 
-*Все права и лева защищены **alexlnos** © 2024*
+- `GHCR_NAMESPACE`
+- `DOKPLOY_URL`
 
----
+### GitHub Secrets
 
-**P.S.** Не забывайте проверять обновления от **alexlnos** и оставаться на волне технологий!
-
----
-
-# 🚀🌈 **ДА ЗДРАВСТВУЕТ ALEXLNOS!** 🌈🚀
+- `DOKPLOY_API_KEY`
+- `DOKPLOY_APPLICATION_ID`

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -37,18 +31,21 @@ generator nestjsDto {
 }
 
 model User {
-  id         Int       @id @default(autoincrement())
-  name       String
+  id                  Int                     @id @default(autoincrement())
+  name                String
   /// @IsEmail
-  email      String    @unique
-  password   String
-  sessions   Session[] @relation("UserSessions")
+  email               String                  @unique
+  password            String
+  is_super_admin      Boolean                 @default(false)
+  sessions            Session[]               @relation("UserSessions")
+  section_permissions UserSectionPermission[] @relation("UserSectionPermissions")
+  authored_news       News[]                  @relation("NewsAuthor")
   /// @DtoReadOnly
-  created_at DateTime  @default(now())
+  created_at          DateTime                @default(now())
   /// @DtoReadOnly
-  updated_at DateTime  @updatedAt
+  updated_at          DateTime                @updatedAt
   /// @DtoReadOnly
-  deleted_at DateTime?
+  deleted_at          DateTime?
 
   @@map("users")
 }
@@ -68,4 +65,85 @@ model Session {
   deleted_at DateTime?
 
   @@map("sessions")
+}
+
+model Section {
+  id          Int                     @id @default(autoincrement())
+  section_id  String                  @unique
+  title       String
+  kind        String
+  route       String?
+  parent_id   Int?
+  sort_order  Int                     @default(0)
+  is_editable Boolean                 @default(true)
+  parent      Section?                @relation("SectionTree", fields: [parent_id], references: [id])
+  children    Section[]               @relation("SectionTree")
+  permissions UserSectionPermission[] @relation("SectionPermissions")
+  /// @DtoReadOnly
+  created_at  DateTime                @default(now())
+  /// @DtoReadOnly
+  updated_at  DateTime                @updatedAt
+  /// @DtoReadOnly
+  deleted_at  DateTime?
+
+  @@map("sections")
+}
+
+model UserSectionPermission {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  section_id Int
+  user       User      @relation("UserSectionPermissions", fields: [user_id], references: [id])
+  section    Section   @relation("SectionPermissions", fields: [section_id], references: [id])
+  /// @DtoReadOnly
+  created_at DateTime  @default(now())
+  /// @DtoReadOnly
+  updated_at DateTime  @updatedAt
+  /// @DtoReadOnly
+  deleted_at DateTime?
+
+  @@unique([user_id, section_id])
+  @@map("user_section_permissions")
+}
+
+model NewsCategory {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  title       String
+  description String?
+  order       Int      @default(0)
+  is_active   Boolean  @default(true)
+  news        News[]
+  /// @DtoReadOnly
+  created_at  DateTime @default(now())
+  /// @DtoReadOnly
+  updated_at  DateTime @updatedAt
+
+  @@map("news_categories")
+}
+
+model News {
+  id              Int           @id @default(autoincrement())
+  slug            String        @unique
+  title           String
+  excerpt         String
+  content         String
+  cover_image_url String?
+  published_at    DateTime?
+  is_published    Boolean       @default(false)
+  category_id     Int?
+  author_id       Int?
+  category        NewsCategory? @relation(fields: [category_id], references: [id])
+  author          User?         @relation("NewsAuthor", fields: [author_id], references: [id])
+  /// @DtoReadOnly
+  created_at      DateTime      @default(now())
+  /// @DtoReadOnly
+  updated_at      DateTime      @updatedAt
+  /// @DtoReadOnly
+  deleted_at      DateTime?
+
+  @@index([is_published, published_at])
+  @@index([category_id])
+  @@index([author_id])
+  @@map("news")
 }

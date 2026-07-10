@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common'
-import { ConfigModule } from '@nestjs/config'
 import { JwtModule } from '@nestjs/jwt'
 
+import { SectionPermissionGuard } from './guards/section-permission.guard'
+import { SuperAdminGuard } from './guards/super-admin.guard'
 import { UserController } from './controllers/user.controller'
 import { UserService } from './services/user.service'
-import { AppPrismaService } from '../../app.prisma.service'
 
 @Module({
     imports: [JwtModule],
-    providers: [UserService, ConfigModule, AppPrismaService],
+    providers: [UserService, SectionPermissionGuard, SuperAdminGuard],
     controllers: [UserController],
     exports: [UserService],
 })

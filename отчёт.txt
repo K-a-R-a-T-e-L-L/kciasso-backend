@@ -1,0 +1,537 @@
+# Отчёт по admin CMS foundation
+
+## 1. Краткое резюме
+
+Выполнены все основные задачи по текущему этапу:
+
+- публичный layout отделён от admin-части через route groups в Next App Router;
+- на frontend добавлен полноценный admin UI для рубрик новостей;
+- на frontend и backend приведена к понятной схеме логика публикации по таймеру;
+- на backend добавлен и покрыт тестами endpoint создания подадминов;
+- на frontend добавлен UI управления подадминами и выбора прав по sections;
+- sidebar админки теперь строится по правам доступа;
+- OpenAPI/Kubb-клиенты обновлены и используются через adapter layer;
+- backend build, backend e2e, frontend api generation, frontend build и frontend lint прошли успешно.
+
+Дополнительно проведена ручная HTTP-проверка основных сценариев.
+
+## 2. Изменённые backend-файлы
+
+### News module
+
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\news\dto\news-status.dto.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\news\dto\admin-news.dto.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\news\services\news.service.ts`
+
+### User/admin endpoints and DTO
+
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\user\dto\create-admin-user.dto.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\user\dto\admin-section.dto.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\user\services\user.service.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\src\system\user\controllers\user.controller.ts`
+
+### E2E tests
+
+- `D:\Desktop\dev\web\orders\kciasso-backend\test\news.e2e-spec.ts`
+- `D:\Desktop\dev\web\orders\kciasso-backend\test\permissions.e2e-spec.ts`
+
+## 3. Изменённые frontend-файлы
+
+### Layout separation / App Router
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\layout.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\(site)\layout.tsx`
+- перенесены публичные routes в `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\(site)\...`
+
+### Admin auth / guards / helpers
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\shared\admin\auth.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\shared\admin\api-error.ts`
+
+### API adapters
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\shared\api\adapters\admin-news.adapter.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\shared\api\adapters\admin-users.adapter.ts`
+
+### Admin routes
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\forbidden\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(auth)\login\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(auth)\login\actions.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\layout.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\actions.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\new\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\[id]\edit\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\categories\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\categories\actions.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\categories\new\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\news\categories\[id]\edit\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\users\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\users\actions.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\users\new\page.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\users\[id]\edit\page.tsx`
+
+### Admin widgets
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminShell\AdminShell.module.scss`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminNewsForm\AdminNewsForm.client.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminNewsForm\AdminNewsForm.module.scss`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminCategoryForm\AdminCategoryForm.client.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminCategoryForm\AdminCategoryForm.types.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminUserForm\AdminUserForm.client.tsx`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminUserForm\AdminUserForm.types.ts`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\AdminUserForm\AdminUserForm.module.scss`
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\widgets\admin\DeleteNewsButton\DeleteNewsButton.client.tsx`
+
+## 4. Root/admin layout separation
+
+Сделано разделение на два уровня layout:
+
+- корневой `src/app/layout.tsx` теперь рендерит только `html/body`;
+- публичный сайт обёрнут в `src/app/(site)/layout.tsx`, где подключён `MainLayout`;
+- `src/app/admin/...` остался вне `(site)`, поэтому admin-страницы больше не наследуют публичный Header/Footer.
+
+Результат:
+
+- `/`, `/news`, `/news/[slug]`, `/gia-9`, `/gia-11`, `/kachestvo-obrazovaniya`, `/o-centre` и другие публичные маршруты продолжают жить внутри `MainLayout`;
+- `/admin`, `/admin/login`, `/admin/news`, `/admin/users` и другие admin routes рендерятся без публичной шапки и футера.
+
+Ручная HTTP-проверка:
+
+- `GET http://localhost:3002/admin/login` вернул `200`;
+- в ответе не найдено публичных ссылок `Главная` и `Контакты`;
+- в ответе есть admin-контент.
+
+## 5. News categories UI
+
+Использованы уже существующие backend endpoints:
+
+- `GET /api/admin/news-categories`
+- `POST /api/admin/news-categories`
+- `PATCH /api/admin/news-categories/:id`
+- `DELETE /api/admin/news-categories/:id`
+
+Добавленные frontend routes:
+
+- `/admin/news/categories`
+- `/admin/news/categories/new`
+- `/admin/news/categories/[id]/edit`
+
+Что реализовано:
+
+- список рубрик;
+- создание рубрики;
+- редактирование `title`, `slug`, `description`, `order`, `isActive`;
+- деактивация рубрики через delete endpoint;
+- интеграция списка рубрик в форму новости;
+- пункт sidebar `Рубрики новостей`.
+
+Права:
+
+- доступ разрешён только `super-admin` и admin с permission `news`;
+- проверка реализована через `requireAdminSectionToken("news")`.
+
+Ручная проверка:
+
+- через API создана тестовая рубрика `manual-category-1783605467`;
+- `/admin/news/categories` открылся с кодом `200`;
+- create flow для рубрики отрабатывает успешно.
+
+Ограничение ручной проверки:
+
+- наличие новой рубрики в select формы новости проверялось без полного браузерного интерактива;
+- HTTP/SSR-проверка страницы `/admin/news/new` не дала надёжно подтвердить отрисовку client-select в сыром HTML;
+- по серверной логике и по загрузке categories на страницу интеграция существует.
+
+## 6. Scheduled publishing logic
+
+### Backend-логика
+
+В `NewsService` приведена к явной схеме публикации:
+
+- черновик:
+  - `isPublished = false`
+- запланировано:
+  - `isPublished = true`
+  - `publishedAt > now`
+- опубликовано:
+  - `isPublished = true`
+  - `publishedAt <= now`
+
+Исправлено публичное поведение:
+
+- `GET /api/public/news`
+- `GET /api/public/news/:slug`
+
+теперь возвращают новости только если:
+
+- `is_published = true`
+- `published_at <= now`
+- `deleted_at = null`
+
+В admin DTO добавлено вычисляемое поле:
+
+- `status: "draft" | "scheduled" | "published"`
+
+### Frontend-логика
+
+В форме новости добавлен режим публикации:
+
+- `draft`
+- `publish-now`
+- `schedule`
+
+Mapping:
+
+- `draft` -> `isPublished=false`
+- `publish-now` -> `isPublished=true`, `publishedAt=now`
+- `schedule` -> `isPublished=true`, `publishedAt=selected datetime`
+
+Для `schedule` поле даты обязательно.
+
+В admin news list теперь используется `status`, а не только `isPublished`.
+
+### Ручная проверка
+
+Через admin API создана тестовая новость:
+
+- slug: `scheduled-manual-1783605490`
+- title: `Scheduled Manual News`
+- status: `scheduled`
+- publishedAt: future datetime
+
+Проверено:
+
+- backend create response вернул `status = scheduled`;
+- публичная страница `/news` не содержит эту новость до момента публикации.
+
+Дополнительно бизнес-логика закрыта e2e-тестами.
+
+## 7. Backend user/admin endpoints
+
+Проверен и добавлен backend endpoint:
+
+- `POST /api/user/admin/users`
+
+Также используются и остаются актуальными:
+
+- `GET /api/user/admin/users`
+- `GET /api/user/admin/users/:id`
+- `PATCH /api/user/admin/users/:id`
+- `GET /api/user/admin/users/:id/permissions`
+- `PATCH /api/user/admin/users/:id/permissions`
+- `GET /api/user/admin/sections`
+
+### Что делает `POST /api/user/admin/users`
+
+Доступ:
+
+- только `super-admin`
+
+Request DTO:
+
+- `name`
+- `email`
+- `password`
+- `isSuperAdmin`
+- `sectionIds`
+
+Поведение:
+
+- валидирует email;
+- хеширует пароль через `bcryptjs`;
+- не возвращает password/hash наружу;
+- проверяет существование переданных `sectionIds`;
+- создаёт пользователя;
+- назначает permissions;
+- возвращает safe DTO:
+  - `id`
+  - `name`
+  - `email`
+  - `isSuperAdmin`
+  - `permissions`
+
+Обработка ошибок:
+
+- дубль email -> `EMAIL_ALREADY_IN_USE`
+
+### Sections endpoint
+
+Добавлен/используется:
+
+- `GET /api/user/admin/sections`
+
+Response содержит:
+
+- `id`
+- `sectionId`
+- `title`
+- `kind`
+- `route`
+- `parentId`
+- `order`
+- `isEditable`
+
+## 8. Frontend users management UI
+
+Добавленные routes:
+
+- `/admin/users`
+- `/admin/users/new`
+- `/admin/users/[id]/edit`
+
+Что реализовано:
+
+### `/admin/users`
+
+- список пользователей;
+- имя;
+- email;
+- роль;
+- список permissions;
+- переход к редактированию.
+
+### `/admin/users/new`
+
+- создание нового admin/sub-admin;
+- поля:
+  - `name`
+  - `email`
+  - `password`
+  - `isSuperAdmin`
+  - `sectionIds`
+
+### `/admin/users/[id]/edit`
+
+- редактирование:
+  - `name`
+  - `email`
+  - `isSuperAdmin`
+  - `sectionIds`
+
+Изменение пароля на этапе edit не добавлялось, чтобы не раздувать scope без отдельной безопасной backend-логики.
+
+## 9. Sections/permissions selection
+
+Для выбора прав на frontend используется backend endpoint sections.
+
+Реализация:
+
+- страница new/edit загружает список sections на сервере;
+- в `AdminUserForm` секции отображаются как readable список checkbox;
+- пользователь выбирает `sectionIds`, которые затем отправляются в backend.
+
+Проверка прав:
+
+- только super-admin видит и использует users management;
+- обычный admin с `news` не должен иметь access к `/admin/users`.
+
+## 10. Admin navigation/sidebar
+
+Sidebar теперь строится из прав текущего пользователя.
+
+Правила видимости:
+
+- `Новости`:
+  - super-admin
+  - admin с permission `news`
+- `Рубрики новостей`:
+  - super-admin
+  - admin с permission `news`
+- `Пользователи`:
+  - только super-admin
+
+Это реализовано в:
+
+- `D:\Desktop\dev\web\orders\kciasso-frontend\src\app\admin\(protected)\layout.tsx`
+
+## 11. Swagger/OpenAPI/Kubb
+
+После backend-изменений выполнен:
+
+- `npm run api:generate`
+
+Сгенерированный клиент содержит нужные сущности:
+
+- `userControllerCreateAdminUser`
+- `userControllerGetAdminSections`
+- `adminNewsControllerGetCategories`
+- `adminNewsControllerCreateCategory`
+- `adminNewsControllerUpdateCategory`
+- `adminNewsControllerDeleteCategory`
+- `AdminSectionDto`
+- `CreateAdminUserDto`
+- `AdminNewsDto.status`
+- `NewsStatus`
+
+Frontend работает не напрямую с generated clients из page-компонентов, а через adapters:
+
+- `admin-news.adapter.ts`
+- `admin-users.adapter.ts`
+
+Это сохраняет централизованную обработку ошибок и headers.
+
+## 12. Проверенные сценарии
+
+### 12.1. Категории
+
+Проверено:
+
+1. Получен токен super-admin через `POST /api/user/authenticate`.
+2. Через `POST /api/admin/news-categories` создана тестовая рубрика.
+3. `/admin/news/categories` доступен с кодом `200`.
+
+Статус:
+
+- сценарий создания рубрики подтверждён.
+
+### 12.2. Таймер публикации
+
+Проверено:
+
+1. Создана новость в будущем.
+2. Backend response вернул `status = scheduled`.
+3. Публичный `/news` эту новость не показывает.
+
+Статус:
+
+- сценарий подтверждён.
+
+### 12.3. Подадмины
+
+Проверено:
+
+1. Как super-admin создан пользователь формата `julia+...@example.com` с permission `news`.
+2. Новый пользователь успешно аутентифицируется.
+3. `/admin/news` доступен (`200`).
+4. `/admin/news/categories` доступен (`200`).
+5. `/admin/users` недоступен.
+
+Нюанс ручной проверки:
+
+- по HTTP доступ к `/admin/users` для обычного admin закончился не прямым чистым SSR-ответом forbidden, а редиректом/финальным ответом, который выглядел как переход к `/admin/login`, хотя backend access-control для этого пользователя корректно запрещает доступ;
+- это не ломает RBAC по факту, но требует дополнительной точечной проверки UX именно в браузере.
+
+### 12.4. Удаление публичного layout из admin
+
+Проверено:
+
+1. `/admin/login` возвращает `200`.
+2. В ответе нет публичных элементов `Главная` / `Контакты`.
+
+Статус:
+
+- separation работает.
+
+## 13. Команды проверки
+
+### Backend
+
+- `npm run build`
+- `npm run test:e2e`
+
+### Frontend
+
+- `npm run api:generate`
+- `npm run build`
+- `npm run lint`
+
+### Дополнительные команды ручной проверки
+
+- запуск backend production build локально;
+- запуск frontend `next start` на `3002`;
+- HTTP-проверки через `Invoke-RestMethod` и `Invoke-WebRequest`;
+- временный локальный seed super-admin:
+  - `npm run prisma:seed:super-admin`
+
+## 14. Ошибки и исправления
+
+### 14.1. Prisma DLL lock на Windows
+
+Проблема:
+
+- `npm run test:e2e` и `prisma generate` периодически падали с:
+  - `EPERM: operation not permitted, unlink ... query_engine-windows.dll.node`
+
+Причина:
+
+- запущенный backend/node watcher или production node процесс держал Prisma engine file.
+
+Исправление:
+
+- останавливался активный backend node-процесс;
+- после этого `npm run test:e2e` проходил успешно.
+
+### 14.2. Сырой `Bad Request` на admin login
+
+Ранее фронт показывал сырое сообщение `Bad Request`.
+
+Исправление:
+
+- в `src/shared/admin/api-error.ts` добавлена нормализация backend error codes в человекочитаемые сообщения;
+- для `AUTH_FAIL` теперь используется сообщение про неверный email или пароль.
+
+### 14.3. `/admin` был внутри публичного layout
+
+Исправление:
+
+- публичные страницы перенесены в `(site)`;
+- admin оставлен отдельной веткой app router.
+
+## 15. Риски
+
+### 15.1. UX перехода обычного admin на `/admin/users`
+
+Backend RBAC работает корректно, но в ручной HTTP-проверке route вёл себя не идеально прозрачно:
+
+- доступ запрещён;
+- при этом наблюдался редирект, который нужно ещё один раз проверить именно в браузере, чтобы убедиться, что пользователь реально видит expected forbidden screen, а не login screen.
+
+### 15.2. Проверка select категорий без полноценного UI automation
+
+Создание categories подтверждено, но наличие конкретной новой рубрики в client-side select формы новости стоит дополнительно один раз проверить интерактивно в браузере.
+
+### 15.3. В shared API client осталась старая localStorage-ветка
+
+В `D:\Desktop\dev\web\orders\kciasso-frontend\src\shared\api\client.ts` всё ещё есть legacy-чтение токена из:
+
+- `window.localStorage.getItem("vibe_admin_access_token")`
+
+Текущий admin flow на это не опирается, потому что использует server-side cookie и explicit `Authorization` в adapters, но этот legacy-хвост лучше убрать отдельно, чтобы не оставлять смешанную auth-модель.
+
+## 16. TODO
+
+- добить ручную браузерную UX-проверку `/admin/users` под обычным admin и убедиться, что показывается именно forbidden page;
+- при необходимости убрать legacy localStorage fallback из `src/shared/api/client.ts`;
+- при необходимости добавить явные визуальные active states в admin sidebar links;
+- при необходимости расширить admin users list поиском и фильтрами;
+- при необходимости добавить runtime browser automation для проверки categories select и scheduled publication UI end-to-end.
+
+## 17. Следующий рекомендуемый этап
+
+Следующим шагом логично:
+
+1. Дочистить admin auth/client слой от legacy localStorage ветки.
+2. Довести ручной browser UX для forbidden users route до полностью предсказуемого состояния.
+3. При необходимости добавить CRUD или редакторский UI для других CMS-разделов по той же схеме:
+   - sections endpoint
+   - permission-aware sidebar
+   - SSR-first pages
+   - adapters поверх generated client
+
+## 18. Итоговое состояние проекта
+
+На конец этого этапа:
+
+- backend собирается;
+- backend e2e проходят;
+- frontend OpenAPI generation проходит;
+- frontend собирается;
+- frontend lint проходит;
+- admin layout отделён от публичного сайта;
+- категории новостей управляются из админки;
+- запланированная публикация работает по ожидаемой бизнес-логике;
+- подадмины создаются и получают section permissions;
+- права учитываются в sidebar и в доступе к admin routes.

@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 
-import { AppPrismaService } from './app.prisma.service'
 import { validationSchema } from './env.validation'
+import { PrismaModule } from './prisma/prisma.module'
+import { NewsModule } from './system/news/news.module'
 import { UserModule } from './system/user/user.module'
 
 @Module({
@@ -11,9 +12,11 @@ import { UserModule } from './system/user/user.module'
             isGlobal: true,
             validationSchema,
         }),
+        PrismaModule,
         UserModule,
+        NewsModule,
     ],
     controllers: [],
-    providers: [AppPrismaService],
+    providers: [],
 })
 export class AppModule {}

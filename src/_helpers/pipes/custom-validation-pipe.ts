@@ -6,7 +6,6 @@ export class CustomValidationPipe extends ValidationPipe {
     constructor(options?: ValidationPipeOptions) {
         super({
             ...options,
-            // Важно: Отключаем автоматическое преобразование ошибок
             exceptionFactory: (errors: ValidationError[]) => {
                 const messages = this.buildErrorMessages(errors)
                 return new BadRequestException(messages)

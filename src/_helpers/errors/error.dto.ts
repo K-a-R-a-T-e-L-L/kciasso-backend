@@ -23,9 +23,9 @@ export class ErrorDto {
     @ApiProperty({ required: false })
     description?: string
 
-    constructor(message: ErrorCodeEnum, description?: string) {
-        this.statusCode = 400
-        this.error = 'Bad Request'
+    constructor(message: ErrorCodeEnum, error?: string, statusCode = 400, description?: string) {
+        this.statusCode = statusCode
+        this.error = error ?? 'Bad Request'
         this.errorMessage = message
         this.description = description
     }

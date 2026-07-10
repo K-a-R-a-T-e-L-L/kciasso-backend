@@ -1,6 +1,6 @@
 services:
     db:
-        image: postgres:latest
+        image: postgres:16-alpine
         platform: 'linux/amd64'
         restart: always
         environment:
@@ -10,14 +10,19 @@ services:
         volumes:
             - ./.data/database:/var/lib/postgresql/data
         ports:
-            - "${DATABASE_PORT_OUT}:5432"
+            - '${DATABASE_PORT_OUT}:5432'
 
     app:
         build:
             context: ..
             dockerfile: .docker/Dockerfile
         restart: always
+        env_file:
+            - ../.env
+        environment:
+            - PORT=${PORT}
+            - FRONTEND_URL=${FRONTEND_URL}
         ports:
-            - "3000:3000"
+            - '${PORT}:${PORT}'
         depends_on:
             - db
