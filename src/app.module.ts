@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config'
 import { validationSchema } from './env.validation'
 import { PrismaModule } from './prisma/prisma.module'
 import { NewsModule } from './system/news/news.module'
+import { SiteSettingsModule } from './system/site-settings/site-settings.module'
 import { UserModule } from './system/user/user.module'
 
 @Module({
@@ -15,6 +16,7 @@ import { UserModule } from './system/user/user.module'
         PrismaModule,
         UserModule,
         NewsModule,
+        SiteSettingsModule,
     ],
     controllers: [],
     providers: [],

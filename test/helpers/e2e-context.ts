@@ -7,7 +7,7 @@ import { execSync } from 'child_process'
 import { Client } from 'pg'
 import { join } from 'path'
 
-import { seedNews, seedNewsCategories, seedSections, seedSuperAdminSafe } from '../../prisma/seed.helpers'
+import { seedNews, seedNewsCategories, seedSections, seedSiteSettings, seedSuperAdminSafe } from '../../prisma/seed.helpers'
 import { configureApp } from '../../src/app.factory'
 
 const repoRoot = join(__dirname, '..', '..')
@@ -97,6 +97,7 @@ function runMigrations(databaseUrl: string) {
 
 async function seedFoundation(prisma: PrismaClient) {
     await seedSections(prisma)
+    await seedSiteSettings(prisma)
     await seedNewsCategories(prisma)
     await seedNews(prisma)
     await seedSuperAdminSafe(prisma, {

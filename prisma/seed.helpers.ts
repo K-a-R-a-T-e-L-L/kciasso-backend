@@ -1,5 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 import * as bcryptjs from 'bcryptjs'
+import {
+    DEFAULT_SITE_SETTINGS,
+    SITE_SETTINGS_SINGLETON_KEY,
+} from '../src/system/site-settings/site-settings.constants'
 
 const saltRounds = 10
 
@@ -83,6 +87,7 @@ export const sections = [
     { section_id: 'kachestvo.root', title: 'Education quality', kind: 'page', route: '/kachestvo-obrazovaniya' },
     { section_id: 'about.contacts', title: 'About contacts', kind: 'page', route: '/o-centre/kontakty' },
     { section_id: 'resources.catalog', title: 'Resources catalog', kind: 'page', route: '/resursy' },
+    { section_id: 'site-settings', title: 'Настройки сайта', kind: 'settings', route: '/admin/settings' },
 ] as const
 
 export const newsCategories = [
@@ -282,6 +287,28 @@ export async function seedNews(prisma: PrismaClient) {
             },
         })
     }
+}
+
+export async function seedSiteSettings(prisma: PrismaClient) {
+    await prisma.siteSettings.upsert({
+        where: {
+            site_key: SITE_SETTINGS_SINGLETON_KEY,
+        },
+        update: {
+            gia_hotline_phone: DEFAULT_SITE_SETTINGS.giaHotlinePhone,
+            information_phone: DEFAULT_SITE_SETTINGS.informationPhone,
+            ege_trust_phone: DEFAULT_SITE_SETTINGS.egeTrustPhone,
+            email: DEFAULT_SITE_SETTINGS.email,
+            home_sections_order: [...DEFAULT_SITE_SETTINGS.homeSectionsOrder],
+        },
+        create: {
+            site_key: SITE_SETTINGS_SINGLETON_KEY,
+            gia_hotline_phone: DEFAULT_SITE_SETTINGS.giaHotlinePhone,
+            information_phone: DEFAULT_SITE_SETTINGS.informationPhone,
+            ege_trust_phone: DEFAULT_SITE_SETTINGS.egeTrustPhone,
+            email: DEFAULT_SITE_SETTINGS.email,
+        },
+    })
 }
 
 export async function seedSuperAdminSafe(prisma: PrismaClient, input: SuperAdminSeedInput) {

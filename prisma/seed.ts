@@ -1,12 +1,13 @@
 import 'dotenv/config'
 
 import { PrismaClient } from '@prisma/client'
-import { seedNews, seedNewsCategories, seedSections, seedSuperAdminSafe } from './seed.helpers'
+import { seedNews, seedNewsCategories, seedSections, seedSiteSettings, seedSuperAdminSafe } from './seed.helpers'
 
 const prisma = new PrismaClient()
 
 async function main() {
     await seedSections(prisma)
+    await seedSiteSettings(prisma)
     await seedNewsCategories(prisma)
     await seedNews(prisma)
     await seedSuperAdminSafe(prisma, {

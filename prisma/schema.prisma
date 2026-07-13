@@ -147,3 +147,19 @@ model News {
   @@index([author_id])
   @@map("news")
 }
+
+model SiteSettings {
+  id                String   @id @default(uuid())
+  site_key          String   @unique
+  gia_hotline_phone String
+  information_phone String
+  ege_trust_phone   String
+  email             String
+  home_sections_order String[] @default(["home.quick-access", "home.resources", "home.gia-reference", "home.official-resources"])
+  /// @DtoReadOnly
+  created_at        DateTime @default(now())
+  /// @DtoReadOnly
+  updated_at        DateTime @updatedAt
+
+  @@map("site_settings")
+}
