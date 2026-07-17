@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import * as bcryptjs from 'bcryptjs'
 
-import { DEFAULT_SITE_SETTINGS, SITE_SETTINGS_SINGLETON_KEY } from '../src/system/site-settings/site-settings.constants'
+import { DEFAULT_SITE_SETTINGS, SITE_SETTINGS_SINGLETON_KEY } from './seed.constants'
 
 const saltRounds = 10
 
