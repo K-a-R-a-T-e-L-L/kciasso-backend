@@ -1,14 +1,25 @@
 import 'dotenv/config'
 
+import { execSync } from 'child_process'
+import { join } from 'path'
+
 import { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
 import { PrismaClient } from '@prisma/client'
-import { execSync } from 'child_process'
 import { Client } from 'pg'
-import { join } from 'path'
 
-import { seedNews, seedNewsCategories, seedSections, seedSiteSettings, seedSuperAdminSafe } from '../../prisma/seed.helpers'
-import { configureApp } from '../../src/app.factory'
+import {
+    seedNews,
+    seedNewsCategories,
+    seedSections,
+    seedSiteSettings,
+    seedSuperAdminSafe,
+} from '../../prisma/seed.helpers'
+import { DocumentStorage } from '../../src/system/documents/storage/document-storage'
+
+type E2eContextOptions = {
+    documentStorage?: DocumentStorage
+}
 
 const repoRoot = join(__dirname, '..', '..')
 
@@ -106,7 +117,7 @@ async function seedFoundation(prisma: PrismaClient) {
     })
 }
 
-export async function createE2eContext() {
+export async function createE2eContext(options: E2eContextOptions = {}) {
     const databaseUrl = getE2eDatabaseUrl()
 
     applyE2eEnv(databaseUrl)
@@ -125,9 +136,14 @@ export async function createE2eContext() {
     await seedFoundation(prisma)
 
     const { AppModule } = await import('../../src/app.module')
-    const moduleRef = await Test.createTestingModule({
+    const { configureApp } = await import('../../src/app.factory')
+    const testingModule = Test.createTestingModule({
         imports: [AppModule],
-    }).compile()
+    })
+    if (options.documentStorage) {
+        testingModule.overrideProvider(DocumentStorage).useValue(options.documentStorage)
+    }
+    const moduleRef = await testingModule.compile()
 
     const app = moduleRef.createNestApplication()
     configureApp(app)

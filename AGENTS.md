@@ -1,5 +1,6 @@
 # KCIASSO backend instructions
 
+Document placements reference one Document and one physical version file; never duplicate files or versions per placement. Removing a placement is not document deletion. Full document deletion must use storage quarantine and compensation around the database transaction.
 Этот репозиторий является backend-частью KCIASSO.
 
 Связанный frontend:
@@ -19,3 +20,5 @@
 Не создавать `PROJECT_STATE.md` или `отчёт.txt` во frontend. После задачи обновлять `PROJECT_STATE.md` только если изменилось фактическое состояние проекта. Подробности последней задачи полностью записывать в канонический `отчёт.txt`.
 
 Соблюдать глобальные правила управления процессами: останавливать только процессы, запущенные текущей задачей, и не выполнять глобальный `taskkill node.exe`.
+
+Runtime document storage находится вне Git и frontend public; production требует persistent mount `/app/storage`. Не изменять generated Prisma/Kubb вручную.

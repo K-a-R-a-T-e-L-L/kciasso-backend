@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import { useContainer } from 'class-validator'
 
+import { MulterExceptionFilter } from './_helpers/filters/multer-exception.filter'
 import { CustomValidationPipe } from './_helpers/pipes/custom-validation-pipe'
 import { AppModule } from './app.module'
 import { getAppConfig } from './config/app.config'
@@ -25,6 +26,7 @@ export function configureApp(app: INestApplication) {
         })
     )
     app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)))
+    app.useGlobalFilters(new MulterExceptionFilter())
     useContainer(app.select(AppModule), { fallbackOnErrors: true })
 
     const swaggerConfig = new DocumentBuilder()

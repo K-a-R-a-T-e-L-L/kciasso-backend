@@ -22,7 +22,14 @@ services:
         environment:
             - PORT=${PORT}
             - FRONTEND_URL=${FRONTEND_URL}
+            - DOCUMENT_STORAGE_ROOT=/app/storage/documents
+            - DOCUMENT_TEMP_ROOT=/app/storage/tmp
+        volumes:
+            - documents_storage:/app/storage
         ports:
             - '${PORT}:${PORT}'
         depends_on:
             - db
+
+volumes:
+    documents_storage:

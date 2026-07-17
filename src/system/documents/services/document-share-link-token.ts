@@ -1,0 +1,14 @@
+import { createHash, randomBytes } from 'node:crypto'
+
+export function createDocumentShareToken() {
+    const token = randomBytes(32).toString('base64url')
+    return {
+        token,
+        tokenHash: hashDocumentShareToken(token),
+        tokenPrefix: token.slice(0, 8),
+    }
+}
+
+export function hashDocumentShareToken(token: string) {
+    return createHash('sha256').update(token, 'utf8').digest('hex')
+}

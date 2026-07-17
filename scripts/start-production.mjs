@@ -10,6 +10,7 @@ function run(command, args) {
 
 const prismaBin = join(process.cwd(), 'node_modules', '.bin', 'prisma')
 
+run('node', ['scripts/ensure-document-storage.mjs'])
 run('node', ['scripts/bootstrap-db.mjs'])
 run(prismaBin, ['migrate', 'deploy'])
 

@@ -6,6 +6,9 @@ export type AppConfig = {
     frontendUrl: string
     uploadsDir: string
     publicUploadsUrl: string
+    documentStorageRoot: string
+    documentTempRoot: string
+    documentMaxFileSizeBytes: number
 }
 
 export function getAppConfig(configService: ConfigService): AppConfig {
@@ -15,5 +18,8 @@ export function getAppConfig(configService: ConfigService): AppConfig {
         frontendUrl: configService.getOrThrow<string>('FRONTEND_URL'),
         uploadsDir: configService.getOrThrow<string>('UPLOADS_DIR'),
         publicUploadsUrl: configService.getOrThrow<string>('PUBLIC_UPLOADS_URL'),
+        documentStorageRoot: configService.getOrThrow<string>('DOCUMENT_STORAGE_ROOT'),
+        documentTempRoot: configService.getOrThrow<string>('DOCUMENT_TEMP_ROOT'),
+        documentMaxFileSizeBytes: configService.getOrThrow<number>('DOCUMENT_MAX_FILE_SIZE_MB') * 1024 * 1024,
     }
 }

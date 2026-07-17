@@ -40,6 +40,10 @@ model User {
   sessions            Session[]               @relation("UserSessions")
   section_permissions UserSectionPermission[] @relation("UserSectionPermissions")
   authored_news       News[]                  @relation("NewsAuthor")
+  created_documents   Document[]               @relation("DocumentCreatedBy")
+  updated_documents   Document[]               @relation("DocumentUpdatedBy")
+  created_document_versions DocumentVersion[]   @relation("DocumentVersionCreatedBy")
+  created_document_share_links DocumentShareLink[] @relation("DocumentShareLinkCreatedBy")
   /// @DtoReadOnly
   created_at          DateTime                @default(now())
   /// @DtoReadOnly
@@ -162,4 +166,94 @@ model SiteSettings {
   updated_at        DateTime @updatedAt
 
   @@map("site_settings")
+}
+
+enum DocumentStatus {
+  DRAFT
+  UNLISTED
+  PUBLISHED
+  ARCHIVED
+}
+
+model Document {
+  id                Int              @id @default(autoincrement())
+  section_key       String
+  title             String
+  description       String?
+  document_number   String?
+  document_date     DateTime?
+  status            DocumentStatus   @default(DRAFT)
+  sort_order        Int              @default(0)
+  current_version_id Int?             @unique
+  created_by_id     Int?
+  updated_by_id     Int?
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+  deleted_at        DateTime?
+  versions          DocumentVersion[] @relation("DocumentVersions")
+  current_version   DocumentVersion?  @relation("DocumentCurrentVersion", fields: [current_version_id], references: [id], onDelete: Restrict)
+  created_by        User?            @relation("DocumentCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  updated_by        User?            @relation("DocumentUpdatedBy", fields: [updated_by_id], references: [id], onDelete: SetNull)
+  placements        DocumentPlacement[]
+
+  @@index([section_key, status, sort_order])
+  @@index([section_key, deleted_at])
+  @@map("documents")
+}
+
+model DocumentPlacement {
+  id          Int      @id @default(autoincrement())
+  document_id Int
+  section_key String
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  document    Document @relation(fields: [document_id], references: [id], onDelete: Cascade)
+
+  @@unique([document_id, section_key])
+  @@index([section_key, sort_order, document_id])
+  @@map("document_placements")
+}
+
+model DocumentVersion {
+  id             Int       @id @default(autoincrement())
+  document_id    Int
+  version_number Int
+  storage_key    String    @unique
+  original_filename String
+  extension      String
+  mime_type      String
+  size_bytes     BigInt
+  sha256         String
+  created_by_id  Int?
+  created_at     DateTime  @default(now())
+  document       Document  @relation("DocumentVersions", fields: [document_id], references: [id], onDelete: Restrict)
+  current_for    Document? @relation("DocumentCurrentVersion")
+  created_by     User?     @relation("DocumentVersionCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+  share_links    DocumentShareLink[] @relation("DocumentVersionShareLinks")
+
+  @@unique([document_id, version_number])
+  @@unique([document_id, sha256])
+  @@index([document_id, created_at])
+  @@map("document_versions")
+}
+
+model DocumentShareLink {
+  id                  Int             @id @default(autoincrement())
+  document_version_id Int
+  token_hash          String          @unique
+  token_prefix        String
+  expires_at          DateTime?
+  revoked_at          DateTime?
+  created_by_id       Int?
+  created_at          DateTime        @default(now())
+  last_access_at      DateTime?
+  access_count        Int             @default(0)
+  document_version    DocumentVersion @relation("DocumentVersionShareLinks", fields: [document_version_id], references: [id], onDelete: Restrict)
+  created_by          User?           @relation("DocumentShareLinkCreatedBy", fields: [created_by_id], references: [id], onDelete: SetNull)
+
+  @@index([document_version_id])
+  @@index([revoked_at, expires_at])
+  @@index([created_at])
+  @@map("document_share_links")
 }

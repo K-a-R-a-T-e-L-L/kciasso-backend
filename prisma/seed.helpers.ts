@@ -1,9 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import * as bcryptjs from 'bcryptjs'
-import {
-    DEFAULT_SITE_SETTINGS,
-    SITE_SETTINGS_SINGLETON_KEY,
-} from '../src/system/site-settings/site-settings.constants'
+
+import { DEFAULT_SITE_SETTINGS, SITE_SETTINGS_SINGLETON_KEY } from '../src/system/site-settings/site-settings.constants'
 
 const saltRounds = 10
 
@@ -32,8 +30,20 @@ export const sections = [
         route: '/gia-9#deadlines',
         parentSectionId: 'gia-9',
     },
-    { section_id: 'gia-9.results', title: 'GIA-9 results', kind: 'tab', route: '/gia-9#results', parentSectionId: 'gia-9' },
-    { section_id: 'gia-9.reports', title: 'GIA-9 reports', kind: 'tab', route: '/gia-9#reports', parentSectionId: 'gia-9' },
+    {
+        section_id: 'gia-9.results',
+        title: 'GIA-9 results',
+        kind: 'tab',
+        route: '/gia-9#results',
+        parentSectionId: 'gia-9',
+    },
+    {
+        section_id: 'gia-9.reports',
+        title: 'GIA-9 reports',
+        kind: 'tab',
+        route: '/gia-9#reports',
+        parentSectionId: 'gia-9',
+    },
     { section_id: 'gia-11', title: 'GIA-11', kind: 'page', route: '/gia-11', parentSectionId: 'gia' },
     {
         section_id: 'gia-11.normative-documents',
@@ -50,8 +60,20 @@ export const sections = [
         route: '/gia-11#deadlines',
         parentSectionId: 'gia-11',
     },
-    { section_id: 'gia-11.results', title: 'GIA-11 results', kind: 'tab', route: '/gia-11#results', parentSectionId: 'gia-11' },
-    { section_id: 'gia-11.reports', title: 'GIA-11 reports', kind: 'tab', route: '/gia-11#reports', parentSectionId: 'gia-11' },
+    {
+        section_id: 'gia-11.results',
+        title: 'GIA-11 results',
+        kind: 'tab',
+        route: '/gia-11#results',
+        parentSectionId: 'gia-11',
+    },
+    {
+        section_id: 'gia-11.reports',
+        title: 'GIA-11 reports',
+        kind: 'tab',
+        route: '/gia-11#reports',
+        parentSectionId: 'gia-11',
+    },
     {
         section_id: 'gia-11.essay',
         title: 'GIA-11 final essay',
@@ -88,6 +110,7 @@ export const sections = [
     { section_id: 'about.contacts', title: 'About contacts', kind: 'page', route: '/o-centre/kontakty' },
     { section_id: 'resources.catalog', title: 'Resources catalog', kind: 'page', route: '/resursy' },
     { section_id: 'site-settings', title: 'Настройки сайта', kind: 'settings', route: '/admin/settings' },
+    { section_id: 'documents', title: 'Документы', kind: 'page', route: '/admin/documents' },
 ] as const
 
 export const newsCategories = [

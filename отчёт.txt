@@ -1,94 +1,153 @@
-# Устранение React и Next Image предупреждений
+# KCIASSO — остановка старых task-процессов и cleanup
 
-## 1. Симптомы
+Дата: 2026-07-16.
 
-На public HomePage наблюдались предупреждения React о `key` и Next Image о legacy `objectFit` и отсутствующем `sizes` у шести официальных логотипов. Дополнительно проверялись сообщения о CSS preload, HMR и React DevTools.
+## 1. Цель
 
-## 2. Источник missing key
+Повторно подтвердить принадлежность старых listeners на 4401/4114 проекту KCIASSO, остановить только разрешённые процессы по exact PID, удалить удерживаемые ими четыре task logs, проверить остальные временные artifacts и выполнить frontend/backend build без запуска dev servers.
 
-Источник подтверждён чтением `src/widgets/pages/HomePage/HomePage.tsx`: выражение `homeSectionsOrder.map((key) => sectionRegistry[key])` возвращало элементы реестра без `key` на непосредственном уровне списка.
+Логический проект:
 
-## 3. Исправление key
+- frontend: `D:\Desktop\dev\web\orders\kciasso-frontend`;
+- backend: `D:\Desktop\dev\web\orders\kciasso-backend`;
+- канонический отчёт: `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt`.
 
-Список секций теперь возвращает `<Fragment key={key}>...</Fragment>`. Это сохраняет управляемый порядок секций и добавляет ключ именно непосредственному элементу результата `map`.
+## 2. Состояние до изменений
 
-## 4. Компоненты с legacy objectFit
+Оба репозитория уже имели большое dirty-состояние, относящееся к предыдущим этапам documents/CMS и recovery. Оно сохранено и не присвоено текущей задаче.
 
-Проблемный вызов находился в официальных ресурсах HomePage: шесть элементов `officialResourceCards` использовали `<Image fill objectFit="cover">`. Источники изображений: `mok.webp`, `mprf.webp`, `fspnvsok.webp`, `fipi.webp`, `fct.webp`, `fioko.webp`.
+До остановки:
 
-## 5. Исправление object-fit
+- port 4401 слушал PID 20292;
+- port 4114 слушал PID 24876;
+- ports 3000 и 4000 listeners не имели;
+- четыре `.task-*` backend logs существовали и были заблокированы;
+- во frontend task artifacts не было.
 
-Удалён legacy prop `objectFit`. Поведение `cover` сохранено через CSS-класс `officialLogo` в `HomePage.module.scss` с `object-fit: cover`.
+## 3. Подтверждение процессов
 
-## 6. Расчёт и добавление sizes
+| Port | PID | Start time | Current directory | Command line | Удерживаемые logs |
+| --- | ---: | --- | --- | --- | --- |
+| 4401 | 20292 | 2026-07-16 09:18:46 | `D:\Desktop\dev\web\orders\kciasso-backend\` | `"D:\Program Files\nodejs\node.exe" dist/src/main.js` | `.task-acceptance-backend.err.log`, `.task-acceptance-backend.log` |
+| 4114 | 24876 | 2026-07-16 04:03:43 | `D:\Desktop\dev\web\orders\kciasso-backend\` | `node --enable-source-maps D:\Desktop\dev\web\orders\kciasso-backend\dist\src\main` | `.task-r3a1-backend.err.log`, `.task-r3a1-backend.log` через старую task process chain |
 
-Размеры выбраны по фактической сетке `.officialGrid`: 3 колонки по умолчанию, 2 при ширине до 1024px, 1 при ширине до 720px. Добавлено значение `sizes="(max-width: 720px) 100vw, (max-width: 1024px) 50vw, 33vw"`.
+Принадлежность подтверждена одновременно listener mapping, Windows process metadata, current directory из process parameters, command line, совпадением start/write timestamps и Restart Manager file-lock mapping. Оба процесса являются KCIASSO backend runtimes и не слушают 3000/4000.
 
-## 7. Проверка шести изображений
+## 4. Остановка процессов
 
-Dev и production browser smoke-проверки подтвердили для всех шести файлов на desktop и mobile: `complete=true`, `naturalWidth>0`, `object-fit=cover`, корректный `sizes`, ненулевые размеры DOM. Для lazy-loaded изображений тест прокручивал `#official-resources` перед проверкой.
+Выполнена только точечная остановка:
 
-## 8. CSS preload warning
+- `Stop-Process -Id 20292 -Force`;
+- `Stop-Process -Id 24876 -Force`.
 
-В исходниках проекта не найден ручной `<link rel="preload" as="style">`. В проверенных production runtime сообщениях CSS preload warning не появился. Если он возникает только в dev, это сообщение Next/HMR о служебной загрузке стилей, а не дефект пользовательской разметки.
+Global `taskkill`, остановка всех `node.exe`, процессы на 3000/4000 и несвязанные приложения не использовались и не затрагивались.
 
-## 9. Dev-only информационные сообщения
+Финальная проверка:
 
-В dev зафиксированы только ожидаемые `%cDownload the React DevTools...` и `[HMR] connected`. Они не подавлялись и не изменялись. Production этих сообщений не показал.
+- PID 20292 отсутствует;
+- PID 24876 отсутствует;
+- port 4401 свободен;
+- port 4114 свободен.
 
-## 10. Lint
+## 5. Инвентаризация task artifacts
 
-Выполнено `npm run lint` во frontend: 0 ошибок. Остались два ранее существовавших предупреждения для динамического `<img>` изображения новости: unused eslint-disable и рекомендация использовать `next/image`; они не относятся к исправленным шести логотипам.
+До удаления выполнен рекурсивный поиск в обоих репозиториях по категориям:
 
-## 11. Build/typecheck
+- `.task-*`;
+- `*.tsbuildinfo`;
+- `*.log` вне `.git`, `node_modules`, `.next`, `dist`, main `storage`, `uploads`, `.docker/.data`;
+- screenshots и Playwright scripts внутри репозиториев;
+- task storage/temp directories.
 
-Выполнено `npm run build` во frontend. Next.js production build и TypeScript завершились успешно; маршруты сгенерированы без ошибок.
+Найдены только четыре старых backend task logs. Во frontend кандидатов не найдено. Пустых task storage/temp directories, `tsconfig.tsbuildinfo`, repository screenshots и browser scripts не найдено. Повторная post-build инвентаризация также пуста.
 
-## 12. Dev runtime console
+## 6. Удалённые файлы и каталоги
 
-Проверен `http://localhost:3000/` на desktop 1440x1000 и mobile 390x844. Целевые предупреждения (`Each child in a list`, legacy `objectFit`, missing `sizes`) отсутствуют; page errors отсутствуют; порядок секций представлен ожидаемыми стабильными id.
+Удалены exact path, без wildcard:
 
-## 13. Production runtime console
+1. `D:\Desktop\dev\web\orders\kciasso-backend\.task-acceptance-backend.err.log`;
+2. `D:\Desktop\dev\web\orders\kciasso-backend\.task-acceptance-backend.log`;
+3. `D:\Desktop\dev\web\orders\kciasso-backend\.task-r3a1-backend.err.log`;
+4. `D:\Desktop\dev\web\orders\kciasso-backend\.task-r3a1-backend.log`.
 
-Production server запускался на временном порту 3104. На desktop и mobile целевые предупреждения и page errors отсутствуют; все шесть логотипов проверены после прокрутки секции.
+Итог cleanup текущей задачи: 4 файла, 0 каталогов. Ошибок удаления нет; все четыре пути отсутствуют.
 
-## 14. Desktop visual check
+## 7. Найдено, но сохранено
 
-На 1440x1000 шесть карточек отображаются в трёх колонках, изображения загружены, размеры DOM ненулевые, `object-fit: cover` применён.
+- PID 43788 — pre-existing KCIASSO backend Jest permissions E2E process. Он не слушает 4401/4114, не является удаляемым runtime и не остановлен.
+- Все product source, tests, `vitest.config.ts`, Prisma migrations, Kubb/Prisma generated files, root manifests/lockfiles, `.env*`, deployment scripts/runbooks сохранены.
+- Main `storage`, `uploads`, `.docker/.data`, пользовательские файлы и данные не просматривались для удаления и не изменялись.
+- Existing dirty source/config/generated изменения сохранены без отката.
 
-## 15. Mobile visual check
+Файлов с неочевидным назначением среди cleanup-кандидатов не осталось.
 
-На 390x844 сетка переключается в одну колонку; после прокрутки все шесть карточек и изображения загружены, размеры DOM ненулевые, clipping не выявлен.
+## 8. Состояние портов
 
-## 16. Изменённые файлы
+| Port | До остановки | После cleanup | Действие текущей задачи |
+| ---: | --- | --- | --- |
+| 3000 | listener отсутствовал | listener отсутствует | не трогался |
+| 4000 | listener отсутствовал | listener отсутствует | не трогался |
+| 4114 | PID 24876 | свободен | подтверждённый PID остановлен |
+| 4401 | PID 20292 | свободен | подтверждённый PID остановлен |
+
+Утверждать, что 3000/4000 «продолжают работать», нельзя: listeners отсутствовали уже в baseline. Серверы на этих портах не запускались и процессы не останавливались.
+
+## 9. Проверки build
 
 Frontend:
 
-- `src/widgets/pages/HomePage/HomePage.tsx` — `Fragment key`, удаление legacy `objectFit`, responsive `sizes` и CSS-класс.
-- `src/widgets/pages/HomePage/HomePage.module.scss` — `.officialLogo { object-fit: cover; }`.
+- команда: `npm run build`;
+- результат: PASS, exit code 0;
+- Next.js 16.2.10 compiled successfully;
+- TypeScript stage PASS;
+- 26 static pages generated;
+- route map включает public, admin documents и API proxy routes.
 
-Backend исходники, Prisma, API-контракт и Kubb generated files в рамках этой задачи не изменялись. Существующие пользовательские изменения сохранены.
+Backend:
 
-## 17. Процессы, PID и порты
+- команда: `npm run build`;
+- результат: PASS, exit code 0;
+- `nest build` завершён без ошибок.
 
-Перед production-проверкой существовали пользовательские процессы на 3000 (PID 3544) и 4000 (PID 38680); они не запускались и не останавливались текущей задачей. Production server текущей задачей запускался через `cmd.exe`, корневой PID 40800, порт 3104.
+Dev/preview/start servers текущей задачей не запускались. После build новых cleanup-кандидатов не появилось.
 
-## 18. Остановка процессов
+## 10. Итоговый Git status
 
-PID 40800 остановлен адресно командой `taskkill /PID 40800 /T /F`. Финальная проверка подтвердила `PORT_3104_FREE`. На отдельной более поздней проверке listeners 3000/4000 уже не наблюдались; эти процессы текущей задачей не завершались.
+Выполнен `git status --short` в обоих репозиториях.
 
-## 19. PROJECT_STATE
+Frontend:
 
-`D:\Desktop\dev\web\orders\kciasso-backend\PROJECT_STATE.md` обновлён: добавлено подтверждённое состояние предупреждений HomePage и актуализирован индекс frontend.
+- 128 status entries;
+- 49 tracked changes: 46 modified, 3 deleted;
+- 79 untracked entries;
+- `.task-*`, `*.tsbuildinfo` и task logs отсутствуют.
 
-## 20. MCP index
+Backend:
 
-Frontend переиндексирован выборочно после изменения исходников: project `D-Desktop-dev-web-orders-kciasso-frontend`, 1756 nodes / 3772 edges, `persistence=false`, artifact не создавался. Backend не переиндексировался.
+- 34 status entries;
+- 20 tracked modified files;
+- 14 untracked entries;
+- `.task-*`, `*.tsbuildinfo` и task logs отсутствуют.
 
-## 21. Git-состояние
+Большой dirty status существовал до текущей задачи. Текущая задача не меняла production source, tests, API, Prisma, migrations, generated files, package manifests или lockfiles. Из tracked documentation обновлены только канонические `PROJECT_STATE.md` и `отчёт.txt`; четыре удалённых logs игнорировались Git правилом `*.log`.
 
-Рабочие деревья frontend и backend были изменены до начала этой задачи. Изменения пользователя не откатывались и не присваивались текущей задаче без проверки. Новые изменения текущей задачи ограничены двумя frontend-файлами и документацией проекта/отчётом.
+## 11. Команды и безопасность
 
-## 22. Ограничения и риски
+Основные действия:
 
-Проверка выполнена на локальных dev и production runtime; внешние браузеры и production deployment не проверялись. CSS preload/HMR/React DevTools сообщения не подавлялись. В проекте остаются два lint warning для отдельного динамического news `<img>`; они не влияют на исправление React key и Next Image предупреждений официальных ресурсов.
+- чтение `AGENTS.md`, `PROJECT_STATE.md`, предыдущего отчёта;
+- `Get-NetTCPConnection` для port/PID mapping;
+- `Get-CimInstance Win32_Process` и process current-directory inspection;
+- Restart Manager read-only mapping file locks;
+- два exact `Stop-Process -Id`;
+- четыре exact `Remove-Item -LiteralPath` после проверки абсолютного backend root;
+- frontend/backend `npm run build`;
+- итоговая artifact, process, port и Git проверка.
+
+Не использовались `git reset`, `git restore`, `git clean`, global kill и массовое удаление wildcard.
+
+## 12. Review и итог
+
+Self-review выполнен по требованиям задачи и фактическим действиям. Остановлены только два подтверждённых listener PID; удалены только четыре заранее перечисленных task logs; source/data/generated/product artifacts не затронуты. Ports 4114/4401 освобождены, builds проходят, task artifacts в репозиториях отсутствуют.
+
+`PROJECT_STATE.md` обновлён компактно: устаревший blocker о locked logs удалён, cleanup отмечен завершённым. Codebase Memory не обновлялся, потому что source/architecture не менялись.
