@@ -1,16 +1,19 @@
-import { Body, Controller, Patch } from '@nestjs/common'
+import { Body, Controller, Patch, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { User } from '@prisma/client'
 
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
-import { RequireSectionPermission } from '../../user/decorators/require-section-permission.decorator'
+import { UserDecorator } from '../../user/decorators/user.decorator'
+import { UserGuard } from '../../user/guards/user.guard'
 import { PaginatedDocumentsDto } from '../dto/paginated-documents.dto'
 import { ReorderDocumentPlacementsDto } from '../dto/reorder-document-placements.dto'
+import { DocumentAccessGuard } from '../policies/document-access.guard'
 import { DocumentsService } from '../services/documents.service'
 
 @Controller('admin/document-placements')
 @ApiTags('Admin Document Placements')
 @ApiBearerAuth()
-@RequireSectionPermission('documents')
+@UseGuards(UserGuard, DocumentAccessGuard)
 export class DocumentPlacementsController {
     constructor(private readonly documentsService: DocumentsService) {}
 
@@ -18,7 +21,7 @@ export class DocumentPlacementsController {
     @ApiOperation({ summary: 'Reorder every document placement in one fixed section' })
     @ApiResponse({ status: 200, type: PaginatedDocumentsDto })
     @ApiResponse({ status: 400, type: ErrorDto })
-    async reorder(@Body() dto: ReorderDocumentPlacementsDto) {
-        return this.documentsService.reorderPlacements(dto)
+    async reorder(@Body() dto: ReorderDocumentPlacementsDto, @UserDecorator() user: User) {
+        return this.documentsService.reorderPlacements(dto, user)
     }
 }

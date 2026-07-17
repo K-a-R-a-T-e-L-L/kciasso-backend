@@ -13,15 +13,17 @@ import {
     Res,
     StreamableFile,
     UploadedFile,
+    UseGuards,
     UseInterceptors,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { User } from '@prisma/client'
 import { Response } from 'express'
 
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
-import { RequireSectionPermission } from '../../user/decorators/require-section-permission.decorator'
 import { UserDecorator } from '../../user/decorators/user.decorator'
+import { UserGuard } from '../../user/guards/user.guard'
 import { CreateDocumentDto } from '../dto/create-document.dto'
 import { DocumentQueryDto } from '../dto/document-query.dto'
 import { DocumentVersionDto } from '../dto/document-version.dto'
@@ -30,6 +32,7 @@ import { PaginatedDocumentsDto } from '../dto/paginated-documents.dto'
 import { UpdateDocumentPlacementsDto } from '../dto/update-document-placements.dto'
 import { UpdateDocumentStatusDto } from '../dto/update-document-status.dto'
 import { UpdateDocumentDto } from '../dto/update-document.dto'
+import { DocumentAccessGuard } from '../policies/document-access.guard'
 import { UploadedFile as DocumentUploadFile, DocumentsService } from '../services/documents.service'
 import { documentUploadOptions } from '../storage/document-upload.options'
 
@@ -51,7 +54,7 @@ const multipartDocumentSchema = {
 @Controller('admin/documents')
 @ApiTags('Admin Documents')
 @ApiBearerAuth()
-@RequireSectionPermission('documents')
+@UseGuards(UserGuard, DocumentAccessGuard)
 export class DocumentsController {
     constructor(private readonly documentsService: DocumentsService) {}
 
@@ -67,41 +70,45 @@ export class DocumentsController {
     async create(
         @Body() dto: CreateDocumentDto,
         @UploadedFile() file: DocumentUploadFile | undefined,
-        @UserDecorator() user: { id: number }
+        @UserDecorator() user: User
     ) {
-        return this.documentsService.createDocument(dto, file, user.id)
+        return this.documentsService.createDocument(dto, file, user)
     }
 
     @Get()
     @ApiOperation({ summary: 'List document metadata' })
     @ApiResponse({ status: 200, type: PaginatedDocumentsDto })
     @ApiResponse({ status: 403, type: ErrorDto })
-    async list(@Query() query: DocumentQueryDto) {
-        return this.documentsService.getDocuments(query)
+    async list(@Query() query: DocumentQueryDto, @UserDecorator() user: User) {
+        return this.documentsService.getDocuments(query, user)
     }
 
     @Get(':id')
     @ApiParam({ name: 'id', type: Number })
     @ApiResponse({ status: 200, type: DocumentDto })
     @ApiResponse({ status: 404, type: ErrorDto })
-    async get(@Param('id', ParseIntPipe) id: number) {
-        return this.documentsService.getDocument(id)
+    async get(@Param('id', ParseIntPipe) id: number, @UserDecorator() user: User) {
+        return this.documentsService.getDocument(id, user)
     }
 
     @Put(':id/placements')
     @ApiParam({ name: 'id', type: Number })
     @ApiOperation({ summary: 'Replace document placements' })
     @ApiResponse({ status: 200, type: DocumentDto })
-    async placements(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDocumentPlacementsDto) {
-        return this.documentsService.updatePlacements(id, dto)
+    async placements(
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: UpdateDocumentPlacementsDto,
+        @UserDecorator() user: User
+    ) {
+        return this.documentsService.updatePlacements(id, dto, user)
     }
 
     @Delete(':id')
     @HttpCode(204)
     @ApiParam({ name: 'id', type: Number })
     @ApiOperation({ summary: 'Permanently delete document, versions, links and files' })
-    async delete(@Param('id', ParseIntPipe) id: number) {
-        await this.documentsService.deleteDocument(id)
+    async delete(@Param('id', ParseIntPipe) id: number, @UserDecorator() user: User) {
+        await this.documentsService.deleteDocument(id, user)
     }
 
     @Patch(':id/status')
@@ -113,9 +120,9 @@ export class DocumentsController {
     async status(
         @Param('id', ParseIntPipe) id: number,
         @Body() dto: UpdateDocumentStatusDto,
-        @UserDecorator() user: { id: number }
+        @UserDecorator() user: User
     ) {
-        return this.documentsService.updateStatus(id, dto, user.id)
+        return this.documentsService.updateStatus(id, dto, user)
     }
 
     @Patch(':id')
@@ -124,20 +131,16 @@ export class DocumentsController {
     @ApiResponse({ status: 200, type: DocumentDto })
     @ApiResponse({ status: 400, type: ErrorDto })
     @ApiResponse({ status: 404, type: ErrorDto })
-    async update(
-        @Param('id', ParseIntPipe) id: number,
-        @Body() dto: UpdateDocumentDto,
-        @UserDecorator() user: { id: number }
-    ) {
-        return this.documentsService.updateDocument(id, dto, user.id)
+    async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDocumentDto, @UserDecorator() user: User) {
+        return this.documentsService.updateDocument(id, dto, user)
     }
 
     @Get(':id/versions')
     @ApiParam({ name: 'id', type: Number })
     @ApiResponse({ status: 200, type: DocumentVersionDto, isArray: true })
     @ApiResponse({ status: 404, type: ErrorDto })
-    async versions(@Param('id', ParseIntPipe) id: number) {
-        return this.documentsService.getVersions(id)
+    async versions(@Param('id', ParseIntPipe) id: number, @UserDecorator() user: User) {
+        return this.documentsService.getVersions(id, user)
     }
 
     @Post(':id/versions/:versionId/current')
@@ -150,9 +153,9 @@ export class DocumentsController {
     async makeCurrent(
         @Param('id', ParseIntPipe) id: number,
         @Param('versionId', ParseIntPipe) versionId: number,
-        @UserDecorator() user: { id: number }
+        @UserDecorator() user: User
     ) {
-        return this.documentsService.makeCurrent(id, versionId, user.id)
+        return this.documentsService.makeCurrent(id, versionId, user)
     }
 
     @Get(':id/versions/:versionId/file')
@@ -164,9 +167,10 @@ export class DocumentsController {
     async file(
         @Param('id', ParseIntPipe) id: number,
         @Param('versionId', ParseIntPipe) versionId: number,
-        @Res({ passthrough: true }) response: Response
+        @Res({ passthrough: true }) response: Response,
+        @UserDecorator() user: User
     ) {
-        const documentFile = await this.documentsService.getDocumentFile(id, versionId)
+        const documentFile = await this.documentsService.getDocumentFile(id, versionId, user)
         response.setHeader('X-Content-Type-Options', 'nosniff')
         const safeFilename = documentFile.originalFilename.replace(/[\r\n"\\/]/g, '_')
         const encodedFilename = encodeURIComponent(safeFilename)
@@ -192,8 +196,8 @@ export class DocumentsController {
     async createVersion(
         @Param('id', ParseIntPipe) id: number,
         @UploadedFile() file: DocumentUploadFile | undefined,
-        @UserDecorator() user: { id: number }
+        @UserDecorator() user: User
     ) {
-        return this.documentsService.createVersion(id, file, user.id)
+        return this.documentsService.createVersion(id, file, user)
     }
 }

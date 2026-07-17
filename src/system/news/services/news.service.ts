@@ -6,8 +6,8 @@ import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
 import { PrismaService } from '../../../prisma/prisma.service'
 import { AdminNewsCategoryDto } from '../dto/admin-news-category.dto'
-import { AdminNewsDto } from '../dto/admin-news.dto'
 import { AdminNewsQueryDto } from '../dto/admin-news-query.dto'
+import { AdminNewsDto } from '../dto/admin-news.dto'
 import { CreateNewsCategoryDto } from '../dto/create-news-category.dto'
 import { CreateNewsDto } from '../dto/create-news.dto'
 import { NewsArticleDto } from '../dto/news-article.dto'
@@ -15,26 +15,24 @@ import { NewsCategoryDto } from '../dto/news-category.dto'
 import { NewsListItemDto } from '../dto/news-list-item.dto'
 import { NewsPaginationMetaDto } from '../dto/news-pagination-meta.dto'
 import { NewsQueryDto } from '../dto/news-query.dto'
+import { NEWS_STATUS, NewsStatus } from '../dto/news-status.dto'
 import { PaginatedAdminNewsDto } from '../dto/paginated-admin-news.dto'
 import { PaginatedNewsDto } from '../dto/paginated-news.dto'
-import { NEWS_STATUS, NewsStatus } from '../dto/news-status.dto'
 import { UpdateNewsCategoryDto } from '../dto/update-news-category.dto'
 import { UpdateNewsDto } from '../dto/update-news.dto'
+import { NewsMediaService } from '../media/news-media.service'
 
 type NewsWithRelations = News & {
     category: NewsCategory | null
     author: Pick<User, 'id' | 'name' | 'email'> | null
 }
 
-type NewsCategoryWithCount = NewsCategory & {
-    _count?: {
-        news: number
-    }
-}
-
 @Injectable()
 export class NewsService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly media: NewsMediaService
+    ) {}
 
     async getPublicNews(query: NewsQueryDto): Promise<PaginatedNewsDto> {
         const page = query.page ?? 1
@@ -76,7 +74,9 @@ export class NewsService {
         })
 
         if (!item) {
-            throw new NotFoundException(new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News not found'))
+            throw new NotFoundException(
+                new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News not found')
+            )
         }
 
         return this.toNewsArticleDto(item)
@@ -164,7 +164,7 @@ export class NewsService {
     }
 
     async updateNews(id: number, dto: UpdateNewsDto): Promise<AdminNewsDto> {
-        await this.findAdminNewsOrThrow(id)
+        const previous = await this.findAdminNewsOrThrow(id)
         await this.ensureCategoryExists(dto.categoryId)
 
         const nextIsPublished = dto.isPublished
@@ -199,6 +199,9 @@ export class NewsService {
                 },
             })
 
+            if (dto.coverImageUrl !== undefined && item.cover_image_url !== previous.cover_image_url) {
+                await this.media.deleteOwnedUrlIfUnreferenced(previous.cover_image_url)
+            }
             return this.toAdminNewsDto(item)
         } catch (error) {
             this.rethrowKnownError(error, 'News slug is already in use')
@@ -206,7 +209,7 @@ export class NewsService {
     }
 
     async deleteNews(id: number): Promise<AdminNewsDto> {
-        await this.findAdminNewsOrThrow(id)
+        const previous = await this.findAdminNewsOrThrow(id)
 
         const item = await this.prisma.news.update({
             where: { id },
@@ -225,6 +228,7 @@ export class NewsService {
             },
         })
 
+        await this.media.deleteOwnedUrlIfUnreferenced(previous.cover_image_url)
         return this.toAdminNewsDto(item)
     }
 
@@ -455,7 +459,9 @@ export class NewsService {
         })
 
         if (!item) {
-            throw new NotFoundException(new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News not found'))
+            throw new NotFoundException(
+                new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News not found')
+            )
         }
 
         return item
@@ -516,7 +522,9 @@ export class NewsService {
             countsByCategoryId.set(item.category_id, item._count._all)
         }
 
-        return categories.map(category => this.toAdminNewsCategoryDto(category, countsByCategoryId.get(category.id) ?? 0))
+        return categories.map(category =>
+            this.toAdminNewsCategoryDto(category, countsByCategoryId.get(category.id) ?? 0)
+        )
     }
 
     private toAdminNewsCategoryDto(category: NewsCategory, newsCount = 0): AdminNewsCategoryDto {

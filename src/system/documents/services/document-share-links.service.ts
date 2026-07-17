@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { DocumentStatus, Prisma } from '@prisma/client'
+import { DocumentStatus, Prisma, User } from '@prisma/client'
 
 import { createDocumentShareToken, hashDocumentShareToken } from './document-share-link-token'
 import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum'
@@ -11,11 +11,12 @@ import { CreateDocumentShareLinkDto } from '../dto/create-document-share-link.dt
 import { CreatedDocumentShareLinkDto } from '../dto/created-document-share-link.dto'
 import { DocumentShareLinkDto } from '../dto/document-share-link.dto'
 import { ResolveDocumentShareLinkDto } from '../dto/resolve-document-share-link.dto'
+import { DocumentAccessPolicy } from '../policies/document-access.policy'
 import { getDocumentContentDisposition } from '../policies/document-file.policy'
 import { DocumentStorage } from '../storage/document-storage'
 
 type ShareLinkWithRelations = Prisma.DocumentShareLinkGetPayload<{
-    include: { document_version: { include: { document: true } } }
+    include: { document_version: { include: { document: { include: { placements: true } } } } }
 }>
 
 export type ShareFile = {
@@ -30,15 +31,17 @@ export type ShareFile = {
 export class DocumentShareLinksService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly storage: DocumentStorage
+        private readonly storage: DocumentStorage,
+        private readonly accessPolicy: DocumentAccessPolicy
     ) {}
 
     async create(
         versionId: number,
         dto: CreateDocumentShareLinkDto,
-        userId: number
+        actor: User
     ): Promise<CreatedDocumentShareLinkDto> {
         const version = await this.findVersionOrThrow(versionId)
+        this.accessPolicy.assertCanManage(actor, version.document.placements)
         this.ensureShareableStatus(version.document.status)
         await this.ensurePhysicalFile(version.storage_key)
         const expiresAt = this.parseExpiry(dto.expiresAt)
@@ -52,9 +55,9 @@ export class DocumentShareLinksService {
                         token_hash: generated.tokenHash,
                         token_prefix: generated.tokenPrefix,
                         expires_at: expiresAt,
-                        created_by_id: userId,
+                        created_by_id: actor.id,
                     },
-                    include: { document_version: { include: { document: true } } },
+                    include: { document_version: { include: { document: { include: { placements: true } } } } },
                 })
                 return {
                     ...this.toDto(link),
@@ -76,25 +79,27 @@ export class DocumentShareLinksService {
         )
     }
 
-    async list(versionId: number): Promise<DocumentShareLinkDto[]> {
+    async list(versionId: number, actor: User): Promise<DocumentShareLinkDto[]> {
         const version = await this.findVersionOrThrow(versionId)
+        this.accessPolicy.assertCanManage(actor, version.document.placements)
         const links = await this.prisma.documentShareLink.findMany({
             where: { document_version_id: version.id },
-            include: { document_version: { include: { document: true } } },
+            include: { document_version: { include: { document: { include: { placements: true } } } } },
             orderBy: { created_at: 'desc' },
         })
         return links.map(link => this.toDto(link))
     }
 
-    async revoke(id: number): Promise<DocumentShareLinkDto> {
+    async revoke(id: number, actor: User): Promise<DocumentShareLinkDto> {
         const link = await this.findLinkOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, link.document_version.document.placements)
         if (!link.revoked_at) {
             await this.prisma.documentShareLink.update({ where: { id }, data: { revoked_at: new Date() } })
         }
         return this.toDto(
             await this.prisma.documentShareLink.findUniqueOrThrow({
                 where: { id },
-                include: { document_version: { include: { document: true } } },
+                include: { document_version: { include: { document: { include: { placements: true } } } } },
             })
         )
     }
@@ -136,10 +141,10 @@ export class DocumentShareLinksService {
 
     private async findVersionOrThrow(
         versionId: number
-    ): Promise<Prisma.DocumentVersionGetPayload<{ include: { document: true } }>> {
+    ): Promise<Prisma.DocumentVersionGetPayload<{ include: { document: { include: { placements: true } } } }>> {
         const version = await this.prisma.documentVersion.findFirst({
             where: { id: versionId, document: { deleted_at: null } },
-            include: { document: true },
+            include: { document: { include: { placements: true } } },
         })
         if (!version) {
             throw new NotFoundException(
@@ -152,7 +157,7 @@ export class DocumentShareLinksService {
     private async findLinkOrThrow(id: number): Promise<ShareLinkWithRelations> {
         const link = await this.prisma.documentShareLink.findFirst({
             where: { id, document_version: { document: { deleted_at: null } } },
-            include: { document_version: { include: { document: true } } },
+            include: { document_version: { include: { document: { include: { placements: true } } } } },
         })
         if (!link) {
             throw new NotFoundException(

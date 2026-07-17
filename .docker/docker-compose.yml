@@ -24,6 +24,7 @@ services:
             - FRONTEND_URL=${FRONTEND_URL}
             - DOCUMENT_STORAGE_ROOT=/app/storage/documents
             - DOCUMENT_TEMP_ROOT=/app/storage/tmp
+            - NEWS_MEDIA_ROOT=/app/storage/media/news
         volumes:
             - documents_storage:/app/storage
         ports:

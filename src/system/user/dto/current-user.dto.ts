@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger'
 
-export class CurrentUserDto {
+import { AdminAccessDto } from './admin-access.dto'
+
+export class CurrentUserDto extends AdminAccessDto {
     @ApiProperty()
     id: number
 
@@ -9,13 +11,4 @@ export class CurrentUserDto {
 
     @ApiProperty()
     email: string
-
-    @ApiProperty()
-    isSuperAdmin: boolean
-
-    @ApiProperty({
-        type: String,
-        isArray: true,
-    })
-    permissions: string[]
 }

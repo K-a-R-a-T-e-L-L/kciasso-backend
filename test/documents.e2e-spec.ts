@@ -64,8 +64,12 @@ describe('Documents hardening (e2e)', () => {
                 name: 'Documents Editor',
                 email: 'documents-editor@example.com',
                 password: 'change_me_12345',
-                isSuperAdmin: false,
-                sectionIds: ['documents'],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: false,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'SELECTED_GROUPS',
+                documentGroups: ['GIA_9'],
             })
         const denied = await request(app.getHttpServer())
             .post('/api/user/admin/users')
@@ -74,8 +78,12 @@ describe('Documents hardening (e2e)', () => {
                 name: 'Documents Denied',
                 email: 'documents-denied@example.com',
                 password: 'change_me_12345',
-                isSuperAdmin: false,
-                sectionIds: ['news'],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: true,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'NONE',
+                documentGroups: [],
             })
         permittedAdminToken = (
             await request(app.getHttpServer())
@@ -101,14 +109,13 @@ describe('Documents hardening (e2e)', () => {
         delete process.env.DOCUMENT_MAX_FILE_SIZE_MB
     })
 
-    it('has the documents section after migrations and preserves idempotent permission assignment', async () => {
-        const section = await prisma.section.findUnique({ where: { section_id: 'documents' } })
-        expect(section).toEqual(expect.objectContaining({ section_id: 'documents', route: '/admin/documents' }))
+    it('uses only the new user fields for document access', async () => {
         const user = await prisma.user.findUnique({
             where: { email: 'documents-editor@example.com' },
-            include: { section_permissions: { include: { section: true } } },
         })
-        expect(user?.section_permissions.map(permission => permission.section.section_id)).toEqual(['documents'])
+        expect(user?.documents_access_mode).toBe('SELECTED_GROUPS')
+        expect(user?.document_groups).toEqual(['GIA_9'])
+        expect(await prisma.userSectionPermission.count({ where: { user_id: user?.id } })).toBe(0)
     })
 
     it('covers super-admin and ordinary admin permission matrix', async () => {
@@ -165,6 +172,58 @@ describe('Documents hardening (e2e)', () => {
             expect(response.status).toBe(403)
         }
         expect(await prisma.document.count({ where: { id: { in: createdDocumentIds } } })).toBe(2)
+    })
+
+    it('exposes mixed-scope documents read-only through an allowed placement without leaking forbidden placements', async () => {
+        const created = await upload(superAdminToken, pdf, 'mixed.pdf', 'application/pdf')
+        expect(created.status).toBe(201)
+        const id = created.body.id
+        await request(app.getHttpServer())
+            .put(`/api/admin/documents/${id}/placements`)
+            .set('Authorization', `Bearer ${superAdminToken}`)
+            .send({ placementKeys: ['gia-9.normative-documents', 'gia-11.normative-documents'] })
+
+        const list = await request(app.getHttpServer())
+            .get('/api/admin/documents')
+            .query({ placementKey: 'gia-9.normative-documents', limit: 100 })
+            .set('Authorization', `Bearer ${permittedAdminToken}`)
+        const mixed = list.body.items.find((item: { id: number }) => item.id === id)
+        expect(mixed.canManage).toBe(false)
+        expect(mixed.placements.map((placement: { sectionKey: string }) => placement.sectionKey)).toEqual([
+            'gia-9.normative-documents',
+        ])
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .get(`/api/admin/documents/${id}`)
+                    .set('Authorization', `Bearer ${permittedAdminToken}`)
+            ).status
+        ).toBe(403)
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .get(`/api/admin/documents/${id}/versions`)
+                    .set('Authorization', `Bearer ${permittedAdminToken}`)
+            ).status
+        ).toBe(403)
+
+        const reorder = await request(app.getHttpServer())
+            .patch('/api/admin/document-placements/reorder')
+            .set('Authorization', `Bearer ${permittedAdminToken}`)
+            .send({
+                sectionKey: 'gia-9.normative-documents',
+                orderedDocumentIds: list.body.items.map((item: { id: number }) => item.id),
+            })
+        expect(reorder.status).toBe(200)
+        expect(reorder.body.items.find((item: { id: number }) => item.id === id).placements).toHaveLength(1)
+
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .delete(`/api/admin/documents/${id}`)
+                    .set('Authorization', `Bearer ${superAdminToken}`)
+            ).status
+        ).toBe(204)
     })
 
     it.each([

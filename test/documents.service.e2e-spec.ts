@@ -36,6 +36,7 @@ function storageMock() {
 
 describe('DocumentsService failure cleanup', () => {
     let root: string
+    const actor = { id: 1, is_super_admin: true } as never
 
     beforeEach(async () => {
         root = await mkdtemp(join(tmpdir(), 'kciasso-documents-service-'))
@@ -57,7 +58,7 @@ describe('DocumentsService failure cleanup', () => {
             service.createDocument(
                 { placementKeys: ['gia-9.normative-documents'], title: 'Failure' },
                 { path: tempPath, originalname: 'failure.pdf', mimetype: 'application/pdf', size: 15 },
-                1
+                actor
             )
         ).rejects.toMatchObject({ response: { errorMessage: 'DOCUMENT_STORAGE_WRITE_FAILED' } })
         await expect(readFile(tempPath)).rejects.toThrow()
@@ -77,7 +78,7 @@ describe('DocumentsService failure cleanup', () => {
             service.createDocument(
                 { placementKeys: ['gia-9.normative-documents'], title: 'Transaction failure' },
                 { path: tempPath, originalname: 'transaction.pdf', mimetype: 'application/pdf', size: 15 },
-                1
+                actor
             )
         ).rejects.toThrow('injected transaction failure')
         expect(storage.delete).toHaveBeenCalledTimes(1)

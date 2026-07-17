@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises'
 
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { DocumentStatus, Prisma } from '@prisma/client'
+import { DocumentStatus, Prisma, User } from '@prisma/client'
 
 import { DocumentPlacementService } from './document-placement.service'
 import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum'
@@ -28,6 +28,7 @@ import {
     mapPublicDocumentToDto,
     mapVersionToDto,
 } from '../mappers/document.mapper'
+import { DocumentAccessPolicy } from '../policies/document-access.policy'
 import {
     ALLOWED_DOCUMENT_MIME_TYPES,
     getDocumentContentDisposition,
@@ -50,19 +51,23 @@ type PreparedFile = { extension: string; mimeType: string; sizeBytes: number; sh
 export class DocumentsService {
     private readonly maxFileSizeBytes: number
     private readonly placementService: DocumentPlacementService
+    private readonly accessPolicy: DocumentAccessPolicy
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly storage: DocumentStorage,
         config: ConfigService,
-        @Optional() placementService?: DocumentPlacementService
+        @Optional() placementService?: DocumentPlacementService,
+        @Optional() accessPolicy?: DocumentAccessPolicy
     ) {
         this.placementService = placementService ?? new DocumentPlacementService(prisma)
+        this.accessPolicy = accessPolicy ?? new DocumentAccessPolicy()
         this.maxFileSizeBytes = getAppConfig(config).documentMaxFileSizeBytes
     }
 
-    async createDocument(dto: CreateDocumentDto, file: UploadedFile | undefined, userId: number): Promise<DocumentDto> {
+    async createDocument(dto: CreateDocumentDto, file: UploadedFile | undefined, actor: User): Promise<DocumentDto> {
         const sections = this.placementService.validatePlacementKeys(dto.placementKeys)
+        sections.forEach(section => this.accessPolicy.assertPlacementAccess(actor, section.key))
         const prepared = await this.prepareFile(file)
         const storageKey = this.createStorageKey(prepared.extension)
 
@@ -90,8 +95,8 @@ export class DocumentsService {
                         document_number: dto.documentNumber?.trim() || null,
                         document_date: dto.documentDate ? new Date(dto.documentDate) : null,
                         status: DocumentStatus.DRAFT,
-                        created_by_id: userId,
-                        updated_by_id: userId,
+                        created_by_id: actor.id,
+                        updated_by_id: actor.id,
                     },
                 })
                 await this.placementService.createInitialPlacements(transaction, created.id, sections)
@@ -105,7 +110,7 @@ export class DocumentsService {
                         mime_type: prepared.mimeType,
                         size_bytes: prepared.sizeBytes,
                         sha256: prepared.sha256,
-                        created_by_id: userId,
+                        created_by_id: actor.id,
                     },
                 })
                 await transaction.document.update({
@@ -118,7 +123,7 @@ export class DocumentsService {
                 })
             })
 
-            return mapDocumentToDto(document)
+            return this.mapForActor(document, actor)
         } catch (error) {
             await this.storage.delete(storageKey)
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -135,9 +140,10 @@ export class DocumentsService {
         }
     }
 
-    async createVersion(documentId: number, file: UploadedFile | undefined, userId: number): Promise<DocumentDto> {
+    async createVersion(documentId: number, file: UploadedFile | undefined, actor: User): Promise<DocumentDto> {
         const prepared = await this.prepareFile(file)
-        await this.findDocumentOrThrow(documentId)
+        const existing = await this.findDocumentOrThrow(documentId)
+        this.accessPolicy.assertCanManage(actor, existing.placements)
         const duplicate = await this.prisma.documentVersion.findFirst({
             where: { document_id: documentId, sha256: prepared.sha256 },
         })
@@ -184,19 +190,19 @@ export class DocumentsService {
                         mime_type: prepared.mimeType,
                         size_bytes: prepared.sizeBytes,
                         sha256: prepared.sha256,
-                        created_by_id: userId,
+                        created_by_id: actor.id,
                     },
                 })
                 await transaction.document.update({
                     where: { id: documentId },
-                    data: { current_version_id: version.id, updated_by_id: userId },
+                    data: { current_version_id: version.id, updated_by_id: actor.id },
                 })
                 return transaction.document.findUniqueOrThrow({
                     where: { id: documentId },
                     include: { current_version: true, placements: true, _count: { select: { versions: true } } },
                 })
             })
-            return mapDocumentToDto(result)
+            return this.mapForActor(result, actor)
         } catch (error) {
             await this.storage.delete(storageKey)
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -213,8 +219,9 @@ export class DocumentsService {
         }
     }
 
-    async getDocuments(query: DocumentQueryDto): Promise<PaginatedDocumentsDto> {
+    async getDocuments(query: DocumentQueryDto, actor: User): Promise<PaginatedDocumentsDto> {
         const section = this.placementService.getSectionOrThrow(query.placementKey)
+        this.accessPolicy.assertPlacementAccess(actor, section.key)
         const where: Prisma.DocumentWhereInput = {
             placements: { some: { section_key: section.key } },
             deleted_at: null,
@@ -235,17 +242,20 @@ export class DocumentsService {
             })
             .slice((query.page - 1) * query.limit, query.page * query.limit)
         return {
-            items: items.map(item => mapDocumentToDto(item)),
+            items: items.map(item => this.mapForActor(item, actor)),
             meta: this.toPaginationMeta(query.page, query.limit, total),
         }
     }
 
-    async getDocument(id: number): Promise<DocumentDto> {
-        return mapDocumentToDto(await this.findDocumentOrThrow(id))
+    async getDocument(id: number, actor: User): Promise<DocumentDto> {
+        const document = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, document.placements)
+        return this.mapForActor(document, actor)
     }
 
-    async getVersions(id: number): Promise<DocumentVersionDto[]> {
+    async getVersions(id: number, actor: User): Promise<DocumentVersionDto[]> {
         const document = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, document.placements)
         const versions = await this.prisma.documentVersion.findMany({
             where: { document_id: document.id },
             orderBy: { version_number: 'asc' },
@@ -254,8 +264,9 @@ export class DocumentsService {
         return versions.map(version => mapVersionToDto(version, version.current_for?.id === document.id))
     }
 
-    async updateDocument(id: number, dto: UpdateDocumentDto, userId: number): Promise<DocumentDto> {
-        await this.findDocumentOrThrow(id)
+    async updateDocument(id: number, dto: UpdateDocumentDto, actor: User): Promise<DocumentDto> {
+        const existingDocument = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, existingDocument.placements)
         if (dto.title !== undefined && !dto.title.trim()) {
             throw new BadRequestException(
                 new ErrorDto(ErrorCodeEnum.DOCUMENT_TITLE_REQUIRED, 'Bad Request', 400, 'Document title is required')
@@ -270,15 +281,16 @@ export class DocumentsService {
                 ...(dto.documentDate !== undefined
                     ? { document_date: dto.documentDate ? new Date(dto.documentDate) : null }
                     : {}),
-                updated_by_id: userId,
+                updated_by_id: actor.id,
             },
             include: { current_version: true, placements: true, _count: { select: { versions: true } } },
         })
-        return mapDocumentToDto(document)
+        return this.mapForActor(document, actor)
     }
 
-    async updateStatus(id: number, dto: UpdateDocumentStatusDto, userId: number): Promise<DocumentDto> {
+    async updateStatus(id: number, dto: UpdateDocumentStatusDto, actor: User): Promise<DocumentDto> {
         const existing = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, existing.placements)
         if (dto.status !== 'DRAFT' && dto.status !== 'PUBLISHED') {
             throw new BadRequestException(
                 new ErrorDto(
@@ -304,14 +316,15 @@ export class DocumentsService {
 
         const document = await this.prisma.document.update({
             where: { id },
-            data: { status: dto.status as DocumentStatus, updated_by_id: userId },
+            data: { status: dto.status as DocumentStatus, updated_by_id: actor.id },
             include: { current_version: true, placements: true, _count: { select: { versions: true } } },
         })
-        return mapDocumentToDto(document)
+        return this.mapForActor(document, actor)
     }
 
-    async makeCurrent(documentId: number, versionId: number, userId: number): Promise<DocumentDto> {
-        await this.findDocumentOrThrow(documentId)
+    async makeCurrent(documentId: number, versionId: number, actor: User): Promise<DocumentDto> {
+        const existingDocument = await this.findDocumentOrThrow(documentId)
+        this.accessPolicy.assertCanManage(actor, existingDocument.placements)
         const version = await this.prisma.documentVersion.findFirst({
             where: { id: versionId, document_id: documentId },
         })
@@ -334,32 +347,40 @@ export class DocumentsService {
         const document = await this.prisma.$transaction(async transaction => {
             await transaction.document.update({
                 where: { id: documentId },
-                data: { current_version_id: versionId, updated_by_id: userId },
+                data: { current_version_id: versionId, updated_by_id: actor.id },
             })
             return transaction.document.findUniqueOrThrow({
                 where: { id: documentId },
                 include: { current_version: true, placements: true, _count: { select: { versions: true } } },
             })
         })
-        return mapDocumentToDto(document)
+        return this.mapForActor(document, actor)
     }
 
-    async updatePlacements(id: number, dto: UpdateDocumentPlacementsDto): Promise<DocumentDto> {
+    async updatePlacements(id: number, dto: UpdateDocumentPlacementsDto, actor: User): Promise<DocumentDto> {
         const document = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, document.placements)
+        dto.placementKeys.forEach(key => this.accessPolicy.assertPlacementAccess(actor, key))
         await this.placementService.replacePlacements(id, dto.placementKeys)
-        return mapDocumentToDto(await this.findDocumentOrThrow(document.id))
+        return this.mapForActor(await this.findDocumentOrThrow(document.id), actor)
     }
 
-    async reorderPlacements(dto: ReorderDocumentPlacementsDto): Promise<PaginatedDocumentsDto> {
+    async reorderPlacements(dto: ReorderDocumentPlacementsDto, actor: User): Promise<PaginatedDocumentsDto> {
+        this.accessPolicy.assertPlacementAccess(actor, dto.sectionKey)
         const result = await this.placementService.reorderPlacements(dto)
-        return this.getDocuments({
-            placementKey: result.sectionKey,
-            page: 1,
-            limit: Math.max(1, result.documentCount),
-        })
+        return this.getDocuments(
+            {
+                placementKey: result.sectionKey,
+                page: 1,
+                limit: Math.max(1, result.documentCount),
+            },
+            actor
+        )
     }
 
-    async getDocumentFile(documentId: number, versionId: number) {
+    async getDocumentFile(documentId: number, versionId: number, actor: User) {
+        const document = await this.findDocumentOrThrow(documentId)
+        this.accessPolicy.assertCanManage(actor, document.placements)
         const version = await this.prisma.documentVersion.findFirst({
             where: { id: versionId, document_id: documentId, document: { deleted_at: null } },
         })
@@ -440,7 +461,9 @@ export class DocumentsService {
         }
     }
 
-    async deleteDocument(id: number): Promise<void> {
+    async deleteDocument(id: number, actor: User): Promise<void> {
+        const authorizedDocument = await this.findDocumentOrThrow(id)
+        this.accessPolicy.assertCanManage(actor, authorizedDocument.placements)
         const document = await this.prisma.document.findFirst({
             where: { id, deleted_at: null },
             include: { versions: true },
@@ -485,6 +508,12 @@ export class DocumentsService {
             )
         }
         return document
+    }
+
+    private mapForActor(document: DocumentWithRelations, actor: User): DocumentDto {
+        const canManage = this.accessPolicy.canManagePlacements(actor, document.placements)
+        const visiblePlacements = this.accessPolicy.filterPlacements(actor, document.placements)
+        return mapDocumentToDto({ ...document, placements: visiblePlacements }, canManage)
     }
 
     private async prepareFile(file: UploadedFile | undefined): Promise<PreparedFile> {

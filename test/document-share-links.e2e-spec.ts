@@ -51,8 +51,12 @@ describe('Document secret share links (e2e)', () => {
                 name: 'Share Links Permitted',
                 email: 'share-links-permitted@example.com',
                 password,
-                isSuperAdmin: false,
-                sectionIds: ['documents'],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: false,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'SELECTED_GROUPS',
+                documentGroups: ['GIA_9'],
             })
         permittedAdminToken = (
             await request(app.getHttpServer())
@@ -67,8 +71,12 @@ describe('Document secret share links (e2e)', () => {
                 name: 'Share Links Denied',
                 email: 'share-links-denied@example.com',
                 password,
-                isSuperAdmin: false,
-                sectionIds: ['news'],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: true,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'NONE',
+                documentGroups: [],
             })
         deniedAdminToken = (
             await request(app.getHttpServer())

@@ -9,6 +9,7 @@ export type AppConfig = {
     documentStorageRoot: string
     documentTempRoot: string
     documentMaxFileSizeBytes: number
+    newsMediaRoot: string
 }
 
 export function getAppConfig(configService: ConfigService): AppConfig {
@@ -21,5 +22,6 @@ export function getAppConfig(configService: ConfigService): AppConfig {
         documentStorageRoot: configService.getOrThrow<string>('DOCUMENT_STORAGE_ROOT'),
         documentTempRoot: configService.getOrThrow<string>('DOCUMENT_TEMP_ROOT'),
         documentMaxFileSizeBytes: configService.getOrThrow<number>('DOCUMENT_MAX_FILE_SIZE_MB') * 1024 * 1024,
+        newsMediaRoot: configService.getOrThrow<string>('NEWS_MEDIA_ROOT'),
     }
 }

@@ -1,179 +1,135 @@
-# KCIASSO — диагностика и исправление CI/deploy
+# KCIASSO — исправление прокрутки modal «Выбор размещений»
 
 Дата: 2026-07-16.
 
-## 1. Цель
+## Цель
 
-Найти фактические причины текущих frontend/backend CI/deploy ошибок, проверить реальные ветки, workflows, lockfile, Docker build context, production image и seed, внести минимальные исправления, проверить их в Linux/Node 22, подтвердить remote commits и результат GitHub Actions/Dokploy trigger.
+Исправить только прокрутку modal «Выбор размещений», предварительно подтвердив причину в реальном браузере. Permissions, backend source, Prisma, API, Kubb и business logic не изменялись.
 
-Логический проект:
+## Диагностика до изменений
 
-- frontend: `D:\Desktop\dev\web\orders\kciasso-frontend`;
-- backend: `D:\Desktop\dev\web\orders\kciasso-backend`;
-- канонический отчёт: `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt`.
+Проверка выполнена в Chromium через Playwright на уже работавших пользовательских KCIASSO frontend/backend (`3000`/`4000`). Процессы использовались только read-only, не перезапускались и не останавливались.
 
-## 2. Состояние до исправлений
+Сценарий:
 
-### Frontend
+1. Выполнен вход в admin UI.
+2. Открыты «Документы» → «Добавить документ» → «Изменить размещение».
+3. В modal раскрыта группа «Качество образования» с 31 пунктом.
+4. Сняты DOM dimensions и computed styles overlay, dialog, общего списка, раскрытой группы и footer.
 
-- local current branch: `master`;
-- upstream: `origin/master`;
-- remote deploy commit: `e04e406e2fc89817fa35ff94438e9a3dff8b8351`;
-- workflow слушал pushes в `master` и `main`, фактические runs шли из `master`;
-- исправленный `package-lock.json` был только staged, commit отсутствовал;
-- `git push origin master` поэтому сообщил `Everything up-to-date` и не передал новый lock;
-- remote lock не содержал необходимые root/nested записи `@emnapi/core` и `@emnapi/runtime`.
+Исходные метрики на 1366×768:
 
-### Backend
+- предполагаемый scroll area `.placementGroups`: `clientHeight=494`, `scrollHeight=494`, `overflow-y=auto`, `min-height=0`, computed height `494.25px`, `max-height=none`;
+- раскрытая `.placementGroup`: `clientHeight=87`, `scrollHeight=1541`, computed height `88.6875px`, `overflow-y=hidden`, `max-height=none`;
+- dialog: flex-column, `clientHeight=744`, computed height/max-height `744px`, без фиксированной `height` в CSS;
+- footer был видим, но содержимое группы обрезалось;
+- body имел `overflow:hidden`;
+- горизонтального document overflow не было.
 
-- local branch называлась `main`, следила за устаревшей `origin/main`, но локальный HEAD уже содержал deploy commit ветки `master`;
-- remote `master`: `3f88b2112721a78c54e80fb42400bfeacf59d21c`;
-- remote legacy `main`: `1a979cc6e4e33b1a603cc1a7a25fbda8b4c504a2`;
-- workflow запускается только из `master`;
-- GitHub Actions использует root `Dockerfile` с build context `.`, не `.docker/Dockerfile`;
-- root runner копировал `package*.json`, `node_modules`, `prisma`, `scripts`, `dist`, но не `src` и не `tsconfig.json`;
-- `prisma/seed.helpers.ts` импортировал `../src/system/site-settings/site-settings.constants`, поэтому runtime `ts-node prisma/seed.ts` завершался TS2307.
+Исходные browser regression tests подтвердили баг на обоих viewport:
 
-## 3. Подтверждённые причины
+- 1366×768: `scrollHeight=494`, `clientHeight=494`;
+- 390×844: `scrollHeight=526`, `clientHeight=526`.
 
-### Frontend
+Обе проверки закономерно упали на условии `scrollHeight > clientHeight`.
 
-Причина не в различии локального и CI npm: старый remote lock действительно был несогласован с `package.json`. Его чистый запуск в `node:22-bookworm-slim` с Node `22.23.1` и npm `10.9.8` воспроизвёл ровно четыре CI ошибки:
+## Точная причина
 
-- `@emnapi/runtime@1.11.2`;
-- `@emnapi/core@1.11.2`;
-- `@emnapi/core@1.11.1`;
-- `@emnapi/runtime@1.11.1`.
+Общий список был CSS Grid внутри flex dialog. При ограничении modal по `max-height` grid распределял доступную высоту между implicit rows и сжимал раскрытую строку группы примерно до 87 px. Одновременно `.placementGroup { overflow: hidden; }` обрезал её реальное содержимое высотой 1541 px.
 
-Исправленный staged lock в том же окружении установил 705 пакетов без EUSAGE. `@emnapi/*` приходит через optional WASM/NAPI runtime dependency chain (`@napi-rs/wasm-runtime`, Rolldown/unrs bindings). `.npmrc`, workspaces и дополнительные lockfiles отсутствуют.
+Из-за clipping переполнение раскрытой группы не участвовало в scrollable overflow родительского `.placementGroups`: у общего списка получалось `scrollHeight == clientHeight`, поэтому wheel и изменение `scrollTop` не могли прокручивать список.
 
-Прошлый push ничего не изменил, потому что опечатка `git coomit` не создала commit, а обычный push передаёт только commits, не staged working tree.
+Проблема не была вызвана body lock, `preventDefault`, touch events или portal events. Глобальный `preventDefault` не используется; успешный wheel test после исправления это дополнительно подтверждает.
 
-### Backend
+## Исправление
 
-Seed выполняется в runner через `prisma db seed`/`ts-node`, а production runner не содержит `src/**`. Это прямое несоответствие runtime image и seed import graph. Проверка всех `prisma/seed*.ts` показала единственную зависимость seed от `src/**` — site settings constants. Копирование одного source-файла создало бы хрупкую частичную runtime-зависимость; вместо этого seed сделан самодостаточным.
+- Overlay приведён к фиксированной grid-структуре с `padding: 12px` и `overflow: hidden`.
+- Dialog получил обязательную фиксированную высоту `min(860px, calc(100dvh - 24px))` и grid rows `auto auto minmax(0, 1fr) auto`.
+- Единственным scroll container остаётся `.placementGroups` между search и footer.
+- Для implicit rows списка установлено `grid-auto-rows: max-content`, поэтому раскрытая группа сохраняет естественную высоту.
+- У `.placementGroup` удалён собственный `overflow:hidden`; фиксированного `max-height` у accordion panel нет.
+- Header, search и footer находятся в отдельных grid rows и не прокручиваются.
+- Существующая логика одной одновременно раскрытой группы и body lock не изменялась.
 
-Seed запускается при `RUN_SEED_ON_BOOT=true`, потому что он идемпотентно upsert-ит обязательные sections, categories, news и site settings, а safe super-admin path не меняет пароль существующего пользователя. Повторный seed на той же тестовой базе прошёл успешно.
+## Метрики после исправления
 
-## 4. Изменённые файлы
+1366×768:
 
-### Frontend
+- `.placementGroups`: `clientHeight=494`, `scrollHeight=1948`, `overflow-y=auto`, `min-height=0`;
+- раскрытая группа: `clientHeight=1541`, `scrollHeight=1541`, `overflow-y=visible`, `max-height=none`;
+- programmatic `scrollTop=1453.6`;
+- wheel `scrollTop=1453.6`;
+- последний пункт видим;
+- footer видим.
 
-- `package-lock.json` — зафиксирован полностью пересозданный npm 10.9.8 lock с optional `@emnapi/*` entries;
-- `.github/workflows/deploy.yml` — deploy trigger оставлен только на `master`, npm закреплён на 10.9.8, добавлен lint;
-- `Dockerfile` — npm 10.9.8 вместо 11.6.2, добавлен lint перед production build.
+390×844:
 
-### Backend
+- `.placementGroups`: `clientHeight=526`, `scrollHeight=2164`, `overflow-y=auto`, `min-height=0`;
+- раскрытая группа: `clientHeight=1757`, `scrollHeight=1757`, `overflow-y=visible`, `max-height=none`;
+- programmatic `scrollTop=1637.6`;
+- wheel `scrollTop=1637.6`;
+- последний пункт видим;
+- footer видим.
 
-- `prisma/seed.helpers.ts` — import переведён с `src/**` на локальный `./seed.constants`;
-- `prisma/seed.constants.ts` — добавлены неизменённые seed defaults и singleton key внутри `prisma/**`;
-- `PROJECT_STATE.md` — актуализированы deploy/runtime факты и проверки;
-- `отчёт.txt` — полностью перезаписан данным отчётом.
+На обоих viewport overlay и dialog не имеют горизонтального overflow; общий scroll area также имеет `scrollWidth <= clientWidth`. Body во время modal заблокирован и после закрытия восстанавливается.
 
-Значения seed и бизнес-логика не изменены. Prisma schema/migrations, OpenAPI, Kubb, Prisma generated files и production source не менялись вручную.
+## Изменённые файлы
 
-## 5. Ветки и commits
+Frontend:
 
-### Frontend
+- `src/widgets/admin/AdminDocumentsPanel/PlacementSelector.module.scss` — root-cause CSS fix;
+- `tests/browser/placement-selector-scroll.spec.ts` — постоянный browser regression test;
+- `playwright.config.ts` — desktop/mobile browser projects;
+- `package.json` — команда `test:browser` и `@playwright/test`;
+- `package-lock.json` — lockfile, нормализованный npm 10.9.8.
 
-- local/upstream/deploy branch: `master` / `origin/master`;
-- remote `main`: отсутствует;
-- final remote commit: `3a5d78bcf3a22a66b87ad58b407296c721e6f399` (`Fix`);
-- `git ls-remote` и `origin/master` подтверждают этот exact hash.
+Документация логического проекта:
 
-### Backend
+- `D:\Desktop\dev\web\orders\kciasso-backend\PROJECT_STATE.md` — актуализирована browser verification и команда проверки;
+- `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt` — полностью перезаписан данным отчётом.
 
-- local branch приведена к `master` и следует за `origin/master`;
-- final deploy commit: `588f2b74770291af5fd9ab5cb17416cb9dcf138e` (`Fix ci cd`);
-- remote legacy `main` сохранена на `1a979cc6e4e33b1a603cc1a7a25fbda8b4c504a2`;
-- backend remote HEAD/default branch всё ещё указывает на legacy `main`; это сохранённый риск, ветки не удалялись;
-- `git ls-remote` и `origin/master` подтверждают exact deploy hash.
+Frontend TypeScript components, permissions, backend source, Prisma schema/migrations, API, OpenAPI, Kubb generated files и business logic не изменялись этой задачей.
 
-Во время длительных Docker-проверок подготовленные изменения были зафиксированы и отправлены учётными данными владельца репозиториев; reflog показал commits до финального self-review. Коммиты не переписывались и force push не применялся: их точное содержимое затем проверено локально, в remote и успешными Actions runs.
+## Автотест и acceptance
 
-## 6. Проверки frontend
+Постоянный Playwright test для каждого viewport:
 
-- old remote lock, Linux Node 22/npm 10.9.8: ожидаемый FAIL с четырьмя `@emnapi/*` Missing;
-- corrected lock, Linux Node 22/npm 10.9.8: PASS, 705 packages;
-- root production Dockerfile build: PASS;
-- `npm ci --no-audit --progress=false`: PASS в clean Linux image;
-- `npm run lint`: PASS в clean Linux image;
-- `npm run build`: PASS в clean Linux image, 26 routes/pages обработаны;
-- workflow YAML parse: PASS;
-- frontend test script: отсутствует, поэтому unit tests не запускались;
-- build-time backend fetch был недоступен, но предусмотренный fallback сработал и build завершился; это не ошибка CI.
+- открывает modal;
+- раскрывает группу из 31 пункта;
+- проверяет `scrollHeight > clientHeight`;
+- проверяет реальное увеличение `scrollTop` programmatic scroll;
+- повторяет проверку через wheel;
+- проверяет видимость последнего пункта;
+- проверяет постоянную видимость footer;
+- проверяет body lock и его восстановление;
+- проверяет отсутствие горизонтального overflow.
 
-GitHub Actions frontend run `29555319923`, run number 14:
+Финальный результат: 2/2 browser projects PASS (`desktop-1366x768`, `mobile-390x844`).
 
-- commit `3a5d78b`;
-- conclusion: `success`;
-- Pin npm, install, lint, build, GHCR image push и `Trigger Dokploy deploy`: все `success`.
+## Остальные проверки
 
-## 7. Проверки backend
+- `npm run test:unit`: PASS, 12 test files, 41/41 tests.
+- `npm run lint`: PASS.
+- `npx npm@10.9.8 ci` в task-only clean copy: PASS, 699 packages.
+- `npm run build` в той же clean copy: PASS, Next.js 16.2.10 production build, 26 static pages generated.
+- `git diff --check`: PASS.
+- Frontend Codebase Memory: refreshed, 2197 nodes / 4615 edges, `persistence=false`, repository artifact не создан.
 
-- root production Dockerfile build: PASS;
-- clean image `npm ci`: PASS, 900 packages;
-- `npx prisma generate`: PASS;
-- `npm run build`: PASS;
-- production runner не содержит `/app/src` и `/app/tsconfig.json`, содержит `/app/prisma/seed.constants.ts`: PASS;
-- imports из `prisma/seed*.ts` в `src/**`: отсутствуют;
-- Jest unit tests: 3 suites, 23/23 tests PASS;
-- workflow YAML parse: PASS.
+Первый isolated build с junction на исходный `node_modules` был отклонён Turbopack до компиляции: symlink выходил за filesystem root. Junction был удалён, затем создана чистая task-only copy с обычным `npm ci`; стандартный build прошёл. Это ограничение временной build-среды, не ошибка приложения.
 
-Изолированная runtime-проверка использовала task-only PostgreSQL, отдельные Docker network/DB volume/storage volume и непубликуемый наружу port 4000. Production DB, production volume, main `storage` и uploads не использовались.
+## Review
 
-Startup chain:
+Self-review проверил соответствие требуемой overlay/dialog/scroll-area структуре, отсутствие изменений business logic, устойчивость selectors, desktop/mobile сценарии, body lock, wheel/programmatic scroll и lockfile через clean `npm ci`. Блокирующих замечаний не найдено.
 
-1. `Document storage directories are ready` — PASS;
-2. bootstrap создал только тестовую БД `kciasso_verify` — PASS;
-3. `prisma migrate deploy` применил 8 migrations к этой тестовой БД — PASS;
-4. `prisma db seed` — PASS;
-5. `node dist/src/main.js` — Nest сообщил successful startup, container остался `running`;
-6. внутренний HTTP check вернул 404 на несуществующий `/api`, подтвердив работающий listener;
-7. `/app/storage/documents` и `/app/storage/tmp` внутри подключённого volume существуют;
-8. повторный seed на той же базе — PASS, container продолжил работать.
+## Процессы, порты и cleanup
 
-Первый ручной повтор seed через прямой `docker exec prisma` получил `ts-node ENOENT`, потому что direct exec не наследует npm-script PATH. Повтор с production-equivalent `PATH=/app/node_modules/.bin:$PATH` прошёл; штатный `npm run start:container` имел правильный PATH и с первого раза успешно выполнил seed.
+- До задачи пользовательский frontend слушал 3000 (PID 10748), backend слушал 4000 (PID 27488).
+- Эти процессы не останавливались, не перезапускались и не изменялись.
+- Task-owned dev/start servers не запускались; 3417 и 4417 не использовались.
+- Playwright browsers создавались test runner и штатно закрывались после каждого запуска.
+- Все task-only build copies, screenshots, диагностический script и `test-results` удалены по точным проверенным путям.
+- Global kill не применялся.
 
-GitHub Actions backend run `29555274050`, run number 8:
+## Итог
 
-- commit `588f2b7`;
-- conclusion: `success`;
-- root image build/push и `Trigger Dokploy deploy`: все `success`.
-
-## 8. Docker/Dokploy и что перезапускать
-
-Оба успешных workflow уже опубликовали SHA-tagged/latest GHCR images и успешно вызвали Dokploy `application.deploy`. Поэтому повторный GitHub Actions rerun не требуется.
-
-Если Dokploy UI всё ещё показывает старые containers, вручную redeploy/recreate нужно сделать для обеих applications:
-
-- frontend image/commit `3a5d78bcf3a22a66b87ad58b407296c721e6f399`;
-- backend image/commit `588f2b74770291af5fd9ab5cb17416cb9dcf138e`.
-
-Dokploy application-side branch/settings не были доступны без его API/UI credentials. Однако фактический deploy path подтверждён workflow: build идёт из `master`, image публикуется, затем Dokploy deploy endpoint успешно вызывается.
-
-## 9. Процессы, ports и cleanup
-
-До задачи Docker Desktop был выключен; listeners 3000/4000 отсутствовали. Для Linux/image/runtime проверок Docker Desktop был запущен задачей. Все созданные задачей containers остановлены exact name и удалены:
-
-- `kciasso-task-front-staged-copy`;
-- `kciasso-task-backend-runtime`;
-- `kciasso-task-postgres`.
-
-Удалены task-only images, network и volumes. Ранее существовавший `docker-db-1` не останавливался и не изменялся. В конце Docker Desktop возвращён в исходное выключенное состояние.
-
-Финальные ports 3000, 4000, 4114 и 4401 свободны. Dev servers не запускались, host ports для runtime test не публиковались.
-
-## 10. Итоговый status и риски
-
-После remote verification оба code trees совпадали с `origin/master` и были clean. Канонические `PROJECT_STATE.md`/`отчёт.txt` сохраняются отдельным documentation commit с `[skip ci]`; production deploy code остаётся в подтверждённом commit `588f2b7`, а обновление отчёта не запускает лишний image deploy.
-
-Оставшиеся риски:
-
-- backend GitHub default branch/remote HEAD всё ещё `main`, хотя deploy branch и local branch — `master`; настройку default branch следует отдельно переключить на `master`, не удаляя legacy `main` без решения владельца;
-- фактическую версию запущенных containers в Dokploy UI нельзя независимо прочитать без credentials;
-- frontend build использует fallback, когда backend недоступен во время prerender; это существующее предусмотренное поведение, не причина текущего CI сбоя.
-
-## 11. Безопасность и review
-
-Не использовались `git reset`, `git restore`, `git clean`, force push, global kill, production DB/storage и destructive tests. Пользовательские процессы/volumes не изменялись. Self-review проверил exact diffs, seed import graph, workflow syntax, clean Linux builds, production runtime, повторный seed, remote hashes и individual GitHub Actions steps.
+Теперь прокручивается только общий `.placementGroups`; `scrollHeight` действительно больше `clientHeight`, последний пункт достижим wheel и programmatic scroll, footer всегда видим, body lock корректно восстанавливается. Исправление ограничено frontend layout и browser regression coverage.

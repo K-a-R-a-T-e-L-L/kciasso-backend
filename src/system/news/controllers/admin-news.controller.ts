@@ -2,11 +2,11 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query 
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
-import { RequireSectionPermission } from '../../user/decorators/require-section-permission.decorator'
+import { RequireAdminCapability } from '../../user/decorators/require-admin-capability.decorator'
 import { UserDecorator } from '../../user/decorators/user.decorator'
 import { AdminNewsCategoryDto } from '../dto/admin-news-category.dto'
-import { AdminNewsDto } from '../dto/admin-news.dto'
 import { AdminNewsQueryDto } from '../dto/admin-news-query.dto'
+import { AdminNewsDto } from '../dto/admin-news.dto'
 import { CreateNewsCategoryDto } from '../dto/create-news-category.dto'
 import { CreateNewsDto } from '../dto/create-news.dto'
 import { PaginatedAdminNewsDto } from '../dto/paginated-admin-news.dto'
@@ -20,7 +20,7 @@ export class AdminNewsController {
     constructor(private readonly newsService: NewsService) {}
 
     @Get('news')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Get admin news list' })
     @ApiResponse({ status: 200, type: PaginatedAdminNewsDto })
     @ApiResponse({ status: 403, type: ErrorDto })
@@ -29,7 +29,7 @@ export class AdminNewsController {
     }
 
     @Get('news/:id')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Get admin news article by id' })
     @ApiResponse({ status: 200, type: AdminNewsDto })
     @ApiResponse({ status: 403, type: ErrorDto })
@@ -39,7 +39,7 @@ export class AdminNewsController {
     }
 
     @Post('news')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Create news article' })
     @ApiResponse({ status: 201, type: AdminNewsDto })
     @ApiResponse({ status: 400, type: ErrorDto })
@@ -49,7 +49,7 @@ export class AdminNewsController {
     }
 
     @Patch('news/:id')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Update news article' })
     @ApiResponse({ status: 200, type: AdminNewsDto })
     @ApiResponse({ status: 400, type: ErrorDto })
@@ -60,7 +60,7 @@ export class AdminNewsController {
     }
 
     @Delete('news/:id')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Soft-delete news article' })
     @ApiResponse({ status: 200, type: AdminNewsDto })
     @ApiResponse({ status: 403, type: ErrorDto })
@@ -70,7 +70,7 @@ export class AdminNewsController {
     }
 
     @Get('news-categories')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Get admin news categories' })
     @ApiResponse({ status: 200, type: AdminNewsCategoryDto, isArray: true })
     @ApiResponse({ status: 403, type: ErrorDto })
@@ -79,7 +79,7 @@ export class AdminNewsController {
     }
 
     @Post('news-categories')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Create news category' })
     @ApiResponse({ status: 201, type: AdminNewsCategoryDto })
     @ApiResponse({ status: 400, type: ErrorDto })
@@ -89,7 +89,7 @@ export class AdminNewsController {
     }
 
     @Patch('news-categories/:id')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Update news category' })
     @ApiResponse({ status: 200, type: AdminNewsCategoryDto })
     @ApiResponse({ status: 400, type: ErrorDto })
@@ -100,7 +100,7 @@ export class AdminNewsController {
     }
 
     @Delete('news-categories/:id')
-    @RequireSectionPermission('news')
+    @RequireAdminCapability('news')
     @ApiOperation({ summary: 'Deactivate news category' })
     @ApiResponse({ status: 200, type: AdminNewsCategoryDto })
     @ApiResponse({ status: 403, type: ErrorDto })

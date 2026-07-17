@@ -11,7 +11,6 @@ describe('News module (e2e)', () => {
     let superAdminToken: string
     let editorWithoutPermissionToken: string
     let editorWithPermissionToken: string
-    let editorWithPermissionId: number
     let activeCategoryId: number
     let softDeletedSlug: string
     let scheduledNewsSlug: string
@@ -23,39 +22,43 @@ describe('News module (e2e)', () => {
         context = await createE2eContext()
         app = context.app
 
-        const superAdminAuthResponse = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-            password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
-        })
+        const superAdminAuthResponse = await request(app.getHttpServer())
+            .post('/api/user/authenticate')
+            .send({
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
+            })
         superAdminToken = superAdminAuthResponse.body.token
 
-        const editorWithoutPermission = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Editor Without Permission',
-            email: 'editor-no-news@example.com',
-            password: 'change_me_12345',
-        })
-        editorWithoutPermissionToken = editorWithoutPermission.body.token
-
-        const editorWithPermission = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Editor With Permission',
-            email: 'editor-with-news@example.com',
-            password: 'change_me_12345',
-        })
-        editorWithPermissionToken = editorWithPermission.body.token
-
-        const adminUsersResponse = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-        editorWithPermissionId = adminUsersResponse.body.find(
-            (user: { email: string }) => user.email === 'editor-with-news@example.com'
-        ).id
-
-        await request(app.getHttpServer())
-            .patch(`/api/user/admin/users/${editorWithPermissionId}/permissions`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
-            .send({
-                sectionIds: ['news'],
-            })
+        for (const [name, email, canManageNews] of [
+            ['Editor Without Permission', 'editor-no-news@example.com', false],
+            ['Editor With Permission', 'editor-with-news@example.com', true],
+        ] as const) {
+            await request(app.getHttpServer())
+                .post('/api/user/admin/users')
+                .set('Authorization', `Bearer ${superAdminToken}`)
+                .send({
+                    name,
+                    email,
+                    password: 'change_me_12345',
+                    role: 'ADMIN',
+                    isActive: true,
+                    canManageNews,
+                    canManageSiteSettings: false,
+                    documentsAccessMode: 'NONE',
+                    documentGroups: [],
+                })
+        }
+        editorWithoutPermissionToken = (
+            await request(app.getHttpServer())
+                .post('/api/user/authenticate')
+                .send({ email: 'editor-no-news@example.com', password: 'change_me_12345' })
+        ).body.token
+        editorWithPermissionToken = (
+            await request(app.getHttpServer())
+                .post('/api/user/authenticate')
+                .send({ email: 'editor-with-news@example.com', password: 'change_me_12345' })
+        ).body.token
 
         const categoriesResponse = await request(app.getHttpServer())
             .get('/api/admin/news-categories')
@@ -72,7 +75,9 @@ describe('News module (e2e)', () => {
 
         expect(response.status).toBe(200)
         expect(response.body.items.length).toBeGreaterThan(0)
-        expect(response.body.items.some((item: { slug: string }) => item.slug === 'seminar-dlya-spetsialistov')).toBe(false)
+        expect(response.body.items.some((item: { slug: string }) => item.slug === 'seminar-dlya-spetsialistov')).toBe(
+            false
+        )
         expect(response.body.meta).toEqual(
             expect.objectContaining({
                 page: 1,

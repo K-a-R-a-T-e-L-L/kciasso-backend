@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common'
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common'
 
 import { UserService } from '../services/user.service'
 
@@ -10,16 +10,15 @@ export class UserGuard implements CanActivate {
         const request = context.switchToHttp().getRequest()
         const token = request.headers.authorization
 
-        if (token) {
-            const session = await this.userService.findSessionByToken(token.replace('Bearer ', ''))
-            if (!session) return false
+        if (token?.startsWith('Bearer ')) {
+            const session = await this.userService.findSessionByToken(token.slice('Bearer '.length))
+            if (!session) throw new UnauthorizedException('Authentication session is invalid or inactive')
 
             request.session = session
             request.user = session.user
 
             return true
-        } else {
-            return false
         }
+        throw new UnauthorizedException('Bearer token is required')
     }
 }

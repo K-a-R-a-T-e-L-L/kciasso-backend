@@ -19,10 +19,12 @@ describe('Auth foundation (e2e)', () => {
     })
 
     it('allows super-admin to authenticate', async () => {
-        const response = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-            password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
-        })
+        const response = await request(app.getHttpServer())
+            .post('/api/user/authenticate')
+            .send({
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
+            })
 
         expect(response.status).toBe(201)
         expect(response.body).toEqual(
@@ -35,10 +37,12 @@ describe('Auth foundation (e2e)', () => {
     })
 
     it('returns safe current user dto without password', async () => {
-        const authResponse = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-            password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
-        })
+        const authResponse = await request(app.getHttpServer())
+            .post('/api/user/authenticate')
+            .send({
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
+            })
 
         const meResponse = await request(app.getHttpServer())
             .get('/api/user/me')
@@ -50,8 +54,10 @@ describe('Auth foundation (e2e)', () => {
                 id: expect.any(Number),
                 name: expect.any(String),
                 email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-                isSuperAdmin: true,
-                permissions: expect.any(Array),
+                role: 'SUPER_ADMIN',
+                isActive: true,
+                documentsAccessMode: expect.any(String),
+                documentGroups: expect.any(Array),
             })
         )
         expect(meResponse.body.password).toBeUndefined()
@@ -70,7 +76,8 @@ describe('Auth foundation (e2e)', () => {
         const currentUserDtoSchema = docsJsonResponse.body.components.schemas.CurrentUserDto
 
         expect(currentUserDtoSchema.properties.password).toBeUndefined()
-        expect(currentUserDtoSchema.properties.permissions.type).toBe('array')
-        expect(currentUserDtoSchema.properties.permissions.items.type).toBe('string')
+        expect(currentUserDtoSchema.properties.role.enum).toEqual(['SUPER_ADMIN', 'ADMIN'])
+        expect(currentUserDtoSchema.properties.documentGroups.type).toBe('array')
+        expect(docsJsonResponse.body.paths['/api/user/register']).toBeUndefined()
     })
 })

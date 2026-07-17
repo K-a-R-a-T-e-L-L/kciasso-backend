@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MinLength } from 'class-validator'
+import { DocumentGroup, DocumentsAccessMode } from '@prisma/client'
+import { IsArray, IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator'
+
+import { AdminRole } from './admin-access.dto'
 
 export class CreateAdminUserDto {
     @ApiProperty()
@@ -16,14 +19,32 @@ export class CreateAdminUserDto {
     @MinLength(8)
     password: string
 
-    @ApiPropertyOptional()
+    @ApiProperty({ enum: AdminRole })
+    @IsEnum(AdminRole)
+    role: AdminRole
+
+    @ApiPropertyOptional({ default: true })
     @IsBoolean()
     @IsOptional()
-    isSuperAdmin?: boolean
+    isActive?: boolean
 
-    @ApiPropertyOptional({ type: [String] })
-    @IsArray()
-    @IsString({ each: true })
+    @ApiPropertyOptional({ default: false })
+    @IsBoolean()
     @IsOptional()
-    sectionIds?: string[]
+    canManageSiteSettings?: boolean
+
+    @ApiPropertyOptional({ default: false })
+    @IsBoolean()
+    @IsOptional()
+    canManageNews?: boolean
+
+    @ApiProperty({ enum: DocumentsAccessMode })
+    @IsEnum(DocumentsAccessMode)
+    documentsAccessMode: DocumentsAccessMode
+
+    @ApiPropertyOptional({ enum: DocumentGroup, isArray: true })
+    @IsArray()
+    @IsEnum(DocumentGroup, { each: true })
+    @IsOptional()
+    documentGroups?: DocumentGroup[]
 }

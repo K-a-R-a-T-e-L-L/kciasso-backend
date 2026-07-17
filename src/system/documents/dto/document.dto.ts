@@ -21,6 +21,7 @@ export class DocumentDto {
     @ApiProperty({ type: () => DocumentPlacementDto, isArray: true }) placements!: DocumentPlacementDto[]
     @ApiPropertyOptional({ type: () => DocumentVersionDto }) currentVersion!: DocumentVersionDto | null
     @ApiProperty() versionsCount!: number
+    @ApiProperty() canManage!: boolean
     @ApiProperty() createdAt!: Date
     @ApiProperty() updatedAt!: Date
 }

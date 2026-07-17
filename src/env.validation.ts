@@ -22,6 +22,7 @@ export const validationSchema = Joi.object({
     DOCUMENT_STORAGE_ROOT: Joi.string().required(),
     DOCUMENT_TEMP_ROOT: Joi.string().required(),
     DOCUMENT_MAX_FILE_SIZE_MB: Joi.number().integer().min(1).max(1024).required(),
+    NEWS_MEDIA_ROOT: Joi.string().default('./storage/media/news'),
     FRONTEND_URL: Joi.string().uri().required(),
     SUPER_ADMIN_EMAIL: Joi.string().email().allow('').optional(),
     SUPER_ADMIN_PASSWORD: Joi.string().min(8).allow('').optional(),

@@ -30,7 +30,7 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/dist ./dist
 
-RUN mkdir -p /app/uploads /app/storage
+RUN mkdir -p /app/uploads /app/storage/documents /app/storage/tmp /app/storage/media/news
 
 EXPOSE 4000
 

@@ -20,7 +20,7 @@ export type VersionLike = {
     current_for?: { id: number } | null
 }
 
-export function mapDocumentToDto(document: DocumentWithRelations): DocumentDto {
+export function mapDocumentToDto(document: DocumentWithRelations, canManage = true): DocumentDto {
     return {
         id: document.id,
         title: document.title,
@@ -40,6 +40,7 @@ export function mapDocumentToDto(document: DocumentWithRelations): DocumentDto {
             })),
         currentVersion: document.current_version ? mapVersionToDto(document.current_version, true) : null,
         versionsCount: document._count.versions,
+        canManage,
         createdAt: document.created_at,
         updatedAt: document.updated_at,
     }

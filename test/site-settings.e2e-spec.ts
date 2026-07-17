@@ -11,45 +11,48 @@ describe('Site settings module (e2e)', () => {
     let superAdminToken: string
     let editorWithoutPermissionToken: string
     let editorWithPermissionToken: string
-    let editorWithPermissionId: number
 
     beforeAll(async () => {
         context = await createE2eContext()
         app = context.app
 
-        const superAdminAuthResponse = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-            password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
-        })
+        const superAdminAuthResponse = await request(app.getHttpServer())
+            .post('/api/user/authenticate')
+            .send({
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
+            })
         superAdminToken = superAdminAuthResponse.body.token
 
-        const editorWithoutPermission = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Settings Viewer',
-            email: 'settings-no-permission@example.com',
-            password: 'change_me_12345',
-        })
-        editorWithoutPermissionToken = editorWithoutPermission.body.token
-
-        const editorWithPermission = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Settings Editor',
-            email: 'settings-with-permission@example.com',
-            password: 'change_me_12345',
-        })
-        editorWithPermissionToken = editorWithPermission.body.token
-
-        const adminUsersResponse = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-        editorWithPermissionId = adminUsersResponse.body.find(
-            (user: { email: string }) => user.email === 'settings-with-permission@example.com'
-        ).id
-
-        await request(app.getHttpServer())
-            .patch(`/api/user/admin/users/${editorWithPermissionId}/permissions`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
-            .send({
-                sectionIds: ['site-settings'],
-            })
+        for (const [name, email, canManageSiteSettings] of [
+            ['Settings Viewer', 'settings-no-permission@example.com', false],
+            ['Settings Editor', 'settings-with-permission@example.com', true],
+        ] as const) {
+            await request(app.getHttpServer())
+                .post('/api/user/admin/users')
+                .set('Authorization', `Bearer ${superAdminToken}`)
+                .send({
+                    name,
+                    email,
+                    password: 'change_me_12345',
+                    role: 'ADMIN',
+                    isActive: true,
+                    canManageNews: false,
+                    canManageSiteSettings,
+                    documentsAccessMode: 'NONE',
+                    documentGroups: [],
+                })
+        }
+        editorWithoutPermissionToken = (
+            await request(app.getHttpServer())
+                .post('/api/user/authenticate')
+                .send({ email: 'settings-no-permission@example.com', password: 'change_me_12345' })
+        ).body.token
+        editorWithPermissionToken = (
+            await request(app.getHttpServer())
+                .post('/api/user/authenticate')
+                .send({ email: 'settings-with-permission@example.com', password: 'change_me_12345' })
+        ).body.token
     })
 
     afterAll(async () => {
@@ -71,12 +74,7 @@ describe('Site settings module (e2e)', () => {
             informationPhone: '8 (495) 198-92-38',
             egeTrustPhone: '8 (495) 198-93-38',
             email: 'info@kcias.ru',
-            homeSectionsOrder: [
-                'home.quick-access',
-                'home.resources',
-                'home.gia-reference',
-                'home.official-resources',
-            ],
+            homeSectionsOrder: ['home.quick-access', 'home.resources', 'home.gia-reference', 'home.official-resources'],
         })
     })
 
@@ -225,12 +223,7 @@ describe('Site settings module (e2e)', () => {
             informationPhone: '+7 (495) 000-00-01',
             egeTrustPhone: '+7 (495) 000-00-02',
             email: 'support@kcias.ru',
-            homeSectionsOrder: [
-                'home.gia-reference',
-                'home.quick-access',
-                'home.official-resources',
-                'home.resources',
-            ],
+            homeSectionsOrder: ['home.gia-reference', 'home.quick-access', 'home.official-resources', 'home.resources'],
         })
     })
 
@@ -268,7 +261,7 @@ describe('Site settings module (e2e)', () => {
         expect(response.body.informationPhone).toBe(value.replace(/\u00a0/g, ' '))
     })
 
-    it.each(['abc', '123', '8 (495) 198-92-3a', '899999999999999'])('rejects invalid phone value %s', async (value) => {
+    it.each(['abc', '123', '8 (495) 198-92-3a', '899999999999999'])('rejects invalid phone value %s', async value => {
         const response = await request(app.getHttpServer())
             .patch('/api/admin/site-settings')
             .set('Authorization', `Bearer ${superAdminToken}`)

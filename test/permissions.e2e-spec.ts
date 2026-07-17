@@ -5,252 +5,128 @@ import { closeE2eContext, createE2eContext } from './helpers/e2e-context'
 
 jest.setTimeout(30000)
 
-describe('Permissions foundation (e2e)', () => {
+describe('Simple admin permissions (e2e)', () => {
     let app: INestApplication
     let context: Awaited<ReturnType<typeof createE2eContext>>
-    let superAdminToken: string
-    let editorToken: string
-    let editorUserId: number
-    let regularUserToken: string
-    let createdUserId: number
+    let superToken: string
+    let superId: number
+    let adminId: number
+    let adminToken: string
 
     beforeAll(async () => {
         context = await createE2eContext()
         app = context.app
-
-        const superAdminAuthResponse = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
-            password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
-        })
-
-        superAdminToken = superAdminAuthResponse.body.token
-
-        const registerResponse = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Editor User',
-            email: 'editor@example.com',
-            password: 'change_me_12345',
-        })
-
-        editorToken = registerResponse.body.token
-
-        const regularUserResponse = await request(app.getHttpServer()).post('/api/user/register').send({
-            name: 'Regular User',
-            email: 'regular@example.com',
-            password: 'change_me_12345',
-        })
-
-        regularUserToken = regularUserResponse.body.token
-
-        const usersResponse = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
-        editorUserId = usersResponse.body.find((user: { email: string }) => user.email === 'editor@example.com').id
-    })
-
-    afterAll(async () => {
-        await closeE2eContext(context)
-    })
-
-    it('allows super-admin to access admin users list', async () => {
-        const response = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
-        expect(response.status).toBe(200)
-        expect(Array.isArray(response.body)).toBe(true)
-        expect(response.body.length).toBeGreaterThanOrEqual(2)
-    })
-
-    it('rejects ordinary user on super-admin endpoint', async () => {
-        const response = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${editorToken}`)
-
-        expect(response.status).toBe(403)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 403,
-                error: 'Forbidden',
-                errorMessage: 'NOT_ENOUGH_RIGHTS',
-            })
-        )
-    })
-
-    it('allows super-admin to assign permissions to ordinary user', async () => {
-        const response = await request(app.getHttpServer())
-            .patch(`/api/user/admin/users/${editorUserId}/permissions`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
+        const auth = await request(app.getHttpServer())
+            .post('/api/user/authenticate')
             .send({
-                sectionIds: ['news', 'gia-9.normative-documents'],
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@example.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'change_me_12345',
             })
-
-        expect(response.status).toBe(200)
-        expect(response.body.permissions).toEqual(['gia-9.normative-documents', 'news'])
-    })
-
-    it('allows super-admin to create subordinate admin', async () => {
-        const response = await request(app.getHttpServer())
+        superToken = auth.body.token
+        const me = await request(app.getHttpServer()).get('/api/user/me').set('Authorization', `Bearer ${superToken}`)
+        superId = me.body.id
+        const created = await request(app.getHttpServer())
             .post('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
+            .set('Authorization', `Bearer ${superToken}`)
             .send({
-                name: 'Julia Editor',
-                email: 'julia@example.com',
+                name: 'Content Admin',
+                email: 'content@example.com',
                 password: 'change_me_12345',
-                isSuperAdmin: false,
-                sectionIds: ['news'],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: true,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'SELECTED_GROUPS',
+                documentGroups: ['GIA_9'],
             })
-
-        expect(response.status).toBe(201)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                id: expect.any(Number),
-                name: 'Julia Editor',
-                email: 'julia@example.com',
-                isSuperAdmin: false,
-                permissions: ['news'],
-            })
-        )
-        expect(response.body.password).toBeUndefined()
-        createdUserId = response.body.id
-    })
-
-    it('created subordinate admin can authenticate', async () => {
-        const response = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: 'julia@example.com',
+        adminId = created.body.id
+        const adminAuth = await request(app.getHttpServer()).post('/api/user/authenticate').send({
+            email: 'content@example.com',
             password: 'change_me_12345',
         })
-
-        expect(response.status).toBe(201)
-        expect(response.body.token).toEqual(expect.any(String))
+        adminToken = adminAuth.body.token
     })
 
-    it('returns subordinate admin permissions after creation', async () => {
-        const response = await request(app.getHttpServer())
-            .get(`/api/user/admin/users/${createdUserId}/permissions`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
+    afterAll(() => closeE2eContext(context))
 
-        expect(response.status).toBe(200)
-        expect(response.body.permissions).toEqual(['news'])
+    it('closes public registration', async () => {
+        expect((await request(app.getHttpServer()).post('/api/user/register').send({})).status).toBe(404)
     })
 
-    it('rejects ordinary user when trying to create other users', async () => {
+    it('returns only the new runtime permission model', async () => {
         const response = await request(app.getHttpServer())
-            .post('/api/user/admin/users')
-            .set('Authorization', `Bearer ${regularUserToken}`)
-            .send({
-                name: 'Forbidden User',
-                email: 'forbidden@example.com',
-                password: 'change_me_12345',
-                sectionIds: ['news'],
-            })
-
-        expect(response.status).toBe(403)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 403,
-                errorMessage: 'NOT_ENOUGH_RIGHTS',
-            })
-        )
-    })
-
-    it('returns clear error for duplicate admin email', async () => {
-        const response = await request(app.getHttpServer())
-            .post('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-            .send({
-                name: 'Julia Duplicate',
-                email: 'julia@example.com',
-                password: 'change_me_12345',
-                sectionIds: ['news'],
-            })
-
-        expect(response.status).toBe(400)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 400,
-                errorMessage: 'EMAIL_ALREADY_IN_USE',
-            })
-        )
-    })
-
-    it('returns sections list for super-admin', async () => {
-        const response = await request(app.getHttpServer())
-            .get('/api/user/admin/sections')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
-        expect(response.status).toBe(200)
-        expect(Array.isArray(response.body)).toBe(true)
-        expect(response.body.some((section: { sectionId: string }) => section.sectionId === 'news')).toBe(true)
-    })
-
-    it('allows super-admin to delete subordinate admin', async () => {
-        const response = await request(app.getHttpServer())
-            .delete(`/api/user/admin/users/${createdUserId}`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
+            .get('/api/user/me')
+            .set('Authorization', `Bearer ${adminToken}`)
         expect(response.status).toBe(200)
         expect(response.body).toEqual(
             expect.objectContaining({
-                id: createdUserId,
-                permissions: [],
+                role: 'ADMIN',
+                isActive: true,
+                canManageNews: true,
+                canManageSiteSettings: false,
+                documentsAccessMode: 'SELECTED_GROUPS',
+                documentGroups: ['GIA_9'],
             })
         )
+        expect(response.body.permissions).toBeUndefined()
     })
 
-    it('prevents deleted admin from authenticating again', async () => {
-        const response = await request(app.getHttpServer()).post('/api/user/authenticate').send({
-            email: 'julia@example.com',
-            password: 'change_me_12345',
-        })
-
-        expect(response.status).toBe(400)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 400,
-                errorMessage: 'AUTH_FAIL',
-            })
-        )
+    it('enforces capabilities and selected document groups', async () => {
+        expect(
+            (await request(app.getHttpServer()).get('/api/admin/news').set('Authorization', `Bearer ${adminToken}`))
+                .status
+        ).toBe(200)
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .get('/api/admin/site-settings')
+                    .set('Authorization', `Bearer ${adminToken}`)
+            ).status
+        ).toBe(403)
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .get('/api/admin/documents?placementKey=gia-9.normative-documents')
+                    .set('Authorization', `Bearer ${adminToken}`)
+            ).status
+        ).toBe(200)
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .get('/api/admin/documents?placementKey=gia-11.normative-documents')
+                    .set('Authorization', `Bearer ${adminToken}`)
+            ).status
+        ).toBe(403)
     })
 
-    it('rejects deleting own super-admin account', async () => {
-        const usersResponse = await request(app.getHttpServer())
-            .get('/api/user/admin/users')
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
-        const currentSuperAdminId = usersResponse.body.find(
-            (user: { email: string }) => user.email === (process.env.SUPER_ADMIN_EMAIL || 'admin@example.com')
-        ).id
-
-        const response = await request(app.getHttpServer())
-            .delete(`/api/user/admin/users/${currentSuperAdminId}`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
-
-        expect(response.status).toBe(400)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 400,
-                errorMessage: 'INVALID_QUERY_STRING',
-            })
-        )
+    it('invalidates an existing session when the admin is deactivated', async () => {
+        const update = await request(app.getHttpServer())
+            .patch(`/api/user/admin/users/${adminId}`)
+            .set('Authorization', `Bearer ${superToken}`)
+            .send({ isActive: false })
+        expect(update.status).toBe(200)
+        expect(
+            (await request(app.getHttpServer()).get('/api/user/me').set('Authorization', `Bearer ${adminToken}`)).status
+        ).toBe(401)
+        expect(
+            (
+                await request(app.getHttpServer())
+                    .post('/api/user/authenticate')
+                    .send({ email: 'content@example.com', password: 'change_me_12345' })
+            ).status
+        ).toBe(400)
     })
 
-    it('returns clear error for unknown section id', async () => {
-        const response = await request(app.getHttpServer())
-            .patch(`/api/user/admin/users/${editorUserId}/permissions`)
-            .set('Authorization', `Bearer ${superAdminToken}`)
-            .send({
-                sectionIds: ['news', 'missing.section'],
-            })
-
-        expect(response.status).toBe(404)
-        expect(response.body).toEqual(
-            expect.objectContaining({
-                statusCode: 404,
-                error: 'Not Found',
-                errorMessage: 'ENTITY_NOT_FOUND',
-                description: 'Unknown sectionIds: missing.section',
-            })
-        )
+    it('transactionally protects the last active SUPER_ADMIN from deactivation or demotion', async () => {
+        const deactivate = await request(app.getHttpServer())
+            .patch(`/api/user/admin/users/${superId}`)
+            .set('Authorization', `Bearer ${superToken}`)
+            .send({ isActive: false })
+        expect(deactivate.status).toBe(400)
+        const demote = await request(app.getHttpServer())
+            .patch(`/api/user/admin/users/${superId}`)
+            .set('Authorization', `Bearer ${superToken}`)
+            .send({ role: 'ADMIN' })
+        expect(demote.status).toBe(400)
     })
 })

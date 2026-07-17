@@ -5,6 +5,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client"
 }
 
 generator nestjsDto {
@@ -37,6 +38,11 @@ model User {
   email               String                  @unique
   password            String
   is_super_admin      Boolean                 @default(false)
+  is_active           Boolean                 @default(true)
+  can_manage_site_settings Boolean            @default(false)
+  can_manage_news     Boolean                 @default(false)
+  documents_access_mode DocumentsAccessMode   @default(NONE)
+  document_groups     DocumentGroup[]          @default([])
   sessions            Session[]               @relation("UserSessions")
   section_permissions UserSectionPermission[] @relation("UserSectionPermissions")
   authored_news       News[]                  @relation("NewsAuthor")
@@ -52,6 +58,21 @@ model User {
   deleted_at          DateTime?
 
   @@map("users")
+}
+
+enum DocumentsAccessMode {
+  NONE
+  ALL
+  SELECTED_GROUPS
+}
+
+enum DocumentGroup {
+  GIA_9
+  GIA_11
+  GIA
+  QUALITY
+  REGIONAL
+  ABOUT
 }
 
 model Session {

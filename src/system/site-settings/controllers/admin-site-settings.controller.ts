@@ -2,7 +2,7 @@ import { Body, Controller, Get, Patch } from '@nestjs/common'
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
-import { RequireSectionPermission } from '../../user/decorators/require-section-permission.decorator'
+import { RequireAdminCapability } from '../../user/decorators/require-admin-capability.decorator'
 import { AdminSiteSettingsResponseDto } from '../dto/admin-site-settings-response.dto'
 import { UpdateSiteSettingsDto } from '../dto/update-site-settings.dto'
 import { SiteSettingsService } from '../services/site-settings.service'
@@ -13,7 +13,7 @@ export class AdminSiteSettingsController {
     constructor(private readonly siteSettingsService: SiteSettingsService) {}
 
     @Get('site-settings')
-    @RequireSectionPermission('site-settings')
+    @RequireAdminCapability('site-settings')
     @ApiOperation({ summary: 'Get site settings for admin' })
     @ApiResponse({ status: 200, type: AdminSiteSettingsResponseDto })
     @ApiResponse({ status: 403, type: ErrorDto })
@@ -22,7 +22,7 @@ export class AdminSiteSettingsController {
     }
 
     @Patch('site-settings')
-    @RequireSectionPermission('site-settings')
+    @RequireAdminCapability('site-settings')
     @ApiOperation({ summary: 'Update site settings for admin' })
     @ApiResponse({ status: 200, type: AdminSiteSettingsResponseDto })
     @ApiResponse({ status: 400, type: ErrorDto })

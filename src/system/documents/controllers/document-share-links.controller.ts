@@ -1,20 +1,33 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Res, StreamableFile } from '@nestjs/common'
+import {
+    Body,
+    Controller,
+    Get,
+    HttpCode,
+    Param,
+    ParseIntPipe,
+    Post,
+    Res,
+    StreamableFile,
+    UseGuards,
+} from '@nestjs/common'
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { User } from '@prisma/client'
 import { Response } from 'express'
 
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
-import { RequireSectionPermission } from '../../user/decorators/require-section-permission.decorator'
 import { UserDecorator } from '../../user/decorators/user.decorator'
+import { UserGuard } from '../../user/guards/user.guard'
 import { CreateDocumentShareLinkDto } from '../dto/create-document-share-link.dto'
 import { CreatedDocumentShareLinkDto } from '../dto/created-document-share-link.dto'
 import { DocumentShareLinkDto } from '../dto/document-share-link.dto'
 import { ResolveDocumentShareLinkDto } from '../dto/resolve-document-share-link.dto'
+import { DocumentAccessGuard } from '../policies/document-access.guard'
 import { DocumentShareLinksService } from '../services/document-share-links.service'
 
 @Controller('admin/document-versions')
 @ApiTags('Admin Document Share Links')
 @ApiBearerAuth()
-@RequireSectionPermission('documents')
+@UseGuards(UserGuard, DocumentAccessGuard)
 export class AdminDocumentShareLinksController {
     constructor(private readonly shareLinks: DocumentShareLinksService) {}
 
@@ -29,9 +42,9 @@ export class AdminDocumentShareLinksController {
     async create(
         @Param('versionId', ParseIntPipe) versionId: number,
         @Body() dto: CreateDocumentShareLinkDto,
-        @UserDecorator() user: { id: number }
+        @UserDecorator() user: User
     ) {
-        return this.shareLinks.create(versionId, dto, user.id)
+        return this.shareLinks.create(versionId, dto, user)
     }
 
     @Get(':versionId/share-links')
@@ -40,15 +53,15 @@ export class AdminDocumentShareLinksController {
     @ApiResponse({ status: 200, type: DocumentShareLinkDto, isArray: true })
     @ApiResponse({ status: 403, type: ErrorDto })
     @ApiResponse({ status: 404, type: ErrorDto })
-    async list(@Param('versionId', ParseIntPipe) versionId: number) {
-        return this.shareLinks.list(versionId)
+    async list(@Param('versionId', ParseIntPipe) versionId: number, @UserDecorator() user: User) {
+        return this.shareLinks.list(versionId, user)
     }
 }
 
 @Controller('admin/document-share-links')
 @ApiTags('Admin Document Share Links')
 @ApiBearerAuth()
-@RequireSectionPermission('documents')
+@UseGuards(UserGuard, DocumentAccessGuard)
 export class AdminDocumentShareLinkRevokeController {
     constructor(private readonly shareLinks: DocumentShareLinksService) {}
 
@@ -59,8 +72,8 @@ export class AdminDocumentShareLinkRevokeController {
     @ApiResponse({ status: 200, type: DocumentShareLinkDto })
     @ApiResponse({ status: 403, type: ErrorDto })
     @ApiResponse({ status: 404, type: ErrorDto })
-    async revoke(@Param('id', ParseIntPipe) id: number) {
-        return this.shareLinks.revoke(id)
+    async revoke(@Param('id', ParseIntPipe) id: number, @UserDecorator() user: User) {
+        return this.shareLinks.revoke(id, user)
     }
 }
 
