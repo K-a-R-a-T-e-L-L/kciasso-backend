@@ -1,10 +1,10 @@
-# KCIASSO — остановка старых task-процессов и cleanup
+# KCIASSO — диагностика и исправление CI/deploy
 
 Дата: 2026-07-16.
 
 ## 1. Цель
 
-Повторно подтвердить принадлежность старых listeners на 4401/4114 проекту KCIASSO, остановить только разрешённые процессы по exact PID, удалить удерживаемые ими четыре task logs, проверить остальные временные artifacts и выполнить frontend/backend build без запуска dev servers.
+Найти фактические причины текущих frontend/backend CI/deploy ошибок, проверить реальные ветки, workflows, lockfile, Docker build context, production image и seed, внести минимальные исправления, проверить их в Linux/Node 22, подтвердить remote commits и результат GitHub Actions/Dokploy trigger.
 
 Логический проект:
 
@@ -12,142 +12,168 @@
 - backend: `D:\Desktop\dev\web\orders\kciasso-backend`;
 - канонический отчёт: `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt`.
 
-## 2. Состояние до изменений
+## 2. Состояние до исправлений
 
-Оба репозитория уже имели большое dirty-состояние, относящееся к предыдущим этапам documents/CMS и recovery. Оно сохранено и не присвоено текущей задаче.
+### Frontend
 
-До остановки:
+- local current branch: `master`;
+- upstream: `origin/master`;
+- remote deploy commit: `e04e406e2fc89817fa35ff94438e9a3dff8b8351`;
+- workflow слушал pushes в `master` и `main`, фактические runs шли из `master`;
+- исправленный `package-lock.json` был только staged, commit отсутствовал;
+- `git push origin master` поэтому сообщил `Everything up-to-date` и не передал новый lock;
+- remote lock не содержал необходимые root/nested записи `@emnapi/core` и `@emnapi/runtime`.
 
-- port 4401 слушал PID 20292;
-- port 4114 слушал PID 24876;
-- ports 3000 и 4000 listeners не имели;
-- четыре `.task-*` backend logs существовали и были заблокированы;
-- во frontend task artifacts не было.
+### Backend
 
-## 3. Подтверждение процессов
+- local branch называлась `main`, следила за устаревшей `origin/main`, но локальный HEAD уже содержал deploy commit ветки `master`;
+- remote `master`: `3f88b2112721a78c54e80fb42400bfeacf59d21c`;
+- remote legacy `main`: `1a979cc6e4e33b1a603cc1a7a25fbda8b4c504a2`;
+- workflow запускается только из `master`;
+- GitHub Actions использует root `Dockerfile` с build context `.`, не `.docker/Dockerfile`;
+- root runner копировал `package*.json`, `node_modules`, `prisma`, `scripts`, `dist`, но не `src` и не `tsconfig.json`;
+- `prisma/seed.helpers.ts` импортировал `../src/system/site-settings/site-settings.constants`, поэтому runtime `ts-node prisma/seed.ts` завершался TS2307.
 
-| Port | PID | Start time | Current directory | Command line | Удерживаемые logs |
-| --- | ---: | --- | --- | --- | --- |
-| 4401 | 20292 | 2026-07-16 09:18:46 | `D:\Desktop\dev\web\orders\kciasso-backend\` | `"D:\Program Files\nodejs\node.exe" dist/src/main.js` | `.task-acceptance-backend.err.log`, `.task-acceptance-backend.log` |
-| 4114 | 24876 | 2026-07-16 04:03:43 | `D:\Desktop\dev\web\orders\kciasso-backend\` | `node --enable-source-maps D:\Desktop\dev\web\orders\kciasso-backend\dist\src\main` | `.task-r3a1-backend.err.log`, `.task-r3a1-backend.log` через старую task process chain |
+## 3. Подтверждённые причины
 
-Принадлежность подтверждена одновременно listener mapping, Windows process metadata, current directory из process parameters, command line, совпадением start/write timestamps и Restart Manager file-lock mapping. Оба процесса являются KCIASSO backend runtimes и не слушают 3000/4000.
+### Frontend
 
-## 4. Остановка процессов
+Причина не в различии локального и CI npm: старый remote lock действительно был несогласован с `package.json`. Его чистый запуск в `node:22-bookworm-slim` с Node `22.23.1` и npm `10.9.8` воспроизвёл ровно четыре CI ошибки:
 
-Выполнена только точечная остановка:
+- `@emnapi/runtime@1.11.2`;
+- `@emnapi/core@1.11.2`;
+- `@emnapi/core@1.11.1`;
+- `@emnapi/runtime@1.11.1`.
 
-- `Stop-Process -Id 20292 -Force`;
-- `Stop-Process -Id 24876 -Force`.
+Исправленный staged lock в том же окружении установил 705 пакетов без EUSAGE. `@emnapi/*` приходит через optional WASM/NAPI runtime dependency chain (`@napi-rs/wasm-runtime`, Rolldown/unrs bindings). `.npmrc`, workspaces и дополнительные lockfiles отсутствуют.
 
-Global `taskkill`, остановка всех `node.exe`, процессы на 3000/4000 и несвязанные приложения не использовались и не затрагивались.
+Прошлый push ничего не изменил, потому что опечатка `git coomit` не создала commit, а обычный push передаёт только commits, не staged working tree.
 
-Финальная проверка:
+### Backend
 
-- PID 20292 отсутствует;
-- PID 24876 отсутствует;
-- port 4401 свободен;
-- port 4114 свободен.
+Seed выполняется в runner через `prisma db seed`/`ts-node`, а production runner не содержит `src/**`. Это прямое несоответствие runtime image и seed import graph. Проверка всех `prisma/seed*.ts` показала единственную зависимость seed от `src/**` — site settings constants. Копирование одного source-файла создало бы хрупкую частичную runtime-зависимость; вместо этого seed сделан самодостаточным.
 
-## 5. Инвентаризация task artifacts
+Seed запускается при `RUN_SEED_ON_BOOT=true`, потому что он идемпотентно upsert-ит обязательные sections, categories, news и site settings, а safe super-admin path не меняет пароль существующего пользователя. Повторный seed на той же тестовой базе прошёл успешно.
 
-До удаления выполнен рекурсивный поиск в обоих репозиториях по категориям:
+## 4. Изменённые файлы
 
-- `.task-*`;
-- `*.tsbuildinfo`;
-- `*.log` вне `.git`, `node_modules`, `.next`, `dist`, main `storage`, `uploads`, `.docker/.data`;
-- screenshots и Playwright scripts внутри репозиториев;
-- task storage/temp directories.
+### Frontend
 
-Найдены только четыре старых backend task logs. Во frontend кандидатов не найдено. Пустых task storage/temp directories, `tsconfig.tsbuildinfo`, repository screenshots и browser scripts не найдено. Повторная post-build инвентаризация также пуста.
+- `package-lock.json` — зафиксирован полностью пересозданный npm 10.9.8 lock с optional `@emnapi/*` entries;
+- `.github/workflows/deploy.yml` — deploy trigger оставлен только на `master`, npm закреплён на 10.9.8, добавлен lint;
+- `Dockerfile` — npm 10.9.8 вместо 11.6.2, добавлен lint перед production build.
 
-## 6. Удалённые файлы и каталоги
+### Backend
 
-Удалены exact path, без wildcard:
+- `prisma/seed.helpers.ts` — import переведён с `src/**` на локальный `./seed.constants`;
+- `prisma/seed.constants.ts` — добавлены неизменённые seed defaults и singleton key внутри `prisma/**`;
+- `PROJECT_STATE.md` — актуализированы deploy/runtime факты и проверки;
+- `отчёт.txt` — полностью перезаписан данным отчётом.
 
-1. `D:\Desktop\dev\web\orders\kciasso-backend\.task-acceptance-backend.err.log`;
-2. `D:\Desktop\dev\web\orders\kciasso-backend\.task-acceptance-backend.log`;
-3. `D:\Desktop\dev\web\orders\kciasso-backend\.task-r3a1-backend.err.log`;
-4. `D:\Desktop\dev\web\orders\kciasso-backend\.task-r3a1-backend.log`.
+Значения seed и бизнес-логика не изменены. Prisma schema/migrations, OpenAPI, Kubb, Prisma generated files и production source не менялись вручную.
 
-Итог cleanup текущей задачи: 4 файла, 0 каталогов. Ошибок удаления нет; все четыре пути отсутствуют.
+## 5. Ветки и commits
 
-## 7. Найдено, но сохранено
+### Frontend
 
-- PID 43788 — pre-existing KCIASSO backend Jest permissions E2E process. Он не слушает 4401/4114, не является удаляемым runtime и не остановлен.
-- Все product source, tests, `vitest.config.ts`, Prisma migrations, Kubb/Prisma generated files, root manifests/lockfiles, `.env*`, deployment scripts/runbooks сохранены.
-- Main `storage`, `uploads`, `.docker/.data`, пользовательские файлы и данные не просматривались для удаления и не изменялись.
-- Existing dirty source/config/generated изменения сохранены без отката.
+- local/upstream/deploy branch: `master` / `origin/master`;
+- remote `main`: отсутствует;
+- final remote commit: `3a5d78bcf3a22a66b87ad58b407296c721e6f399` (`Fix`);
+- `git ls-remote` и `origin/master` подтверждают этот exact hash.
 
-Файлов с неочевидным назначением среди cleanup-кандидатов не осталось.
+### Backend
 
-## 8. Состояние портов
+- local branch приведена к `master` и следует за `origin/master`;
+- final deploy commit: `588f2b74770291af5fd9ab5cb17416cb9dcf138e` (`Fix ci cd`);
+- remote legacy `main` сохранена на `1a979cc6e4e33b1a603cc1a7a25fbda8b4c504a2`;
+- backend remote HEAD/default branch всё ещё указывает на legacy `main`; это сохранённый риск, ветки не удалялись;
+- `git ls-remote` и `origin/master` подтверждают exact deploy hash.
 
-| Port | До остановки | После cleanup | Действие текущей задачи |
-| ---: | --- | --- | --- |
-| 3000 | listener отсутствовал | listener отсутствует | не трогался |
-| 4000 | listener отсутствовал | listener отсутствует | не трогался |
-| 4114 | PID 24876 | свободен | подтверждённый PID остановлен |
-| 4401 | PID 20292 | свободен | подтверждённый PID остановлен |
+Во время длительных Docker-проверок подготовленные изменения были зафиксированы и отправлены учётными данными владельца репозиториев; reflog показал commits до финального self-review. Коммиты не переписывались и force push не применялся: их точное содержимое затем проверено локально, в remote и успешными Actions runs.
 
-Утверждать, что 3000/4000 «продолжают работать», нельзя: listeners отсутствовали уже в baseline. Серверы на этих портах не запускались и процессы не останавливались.
+## 6. Проверки frontend
 
-## 9. Проверки build
+- old remote lock, Linux Node 22/npm 10.9.8: ожидаемый FAIL с четырьмя `@emnapi/*` Missing;
+- corrected lock, Linux Node 22/npm 10.9.8: PASS, 705 packages;
+- root production Dockerfile build: PASS;
+- `npm ci --no-audit --progress=false`: PASS в clean Linux image;
+- `npm run lint`: PASS в clean Linux image;
+- `npm run build`: PASS в clean Linux image, 26 routes/pages обработаны;
+- workflow YAML parse: PASS;
+- frontend test script: отсутствует, поэтому unit tests не запускались;
+- build-time backend fetch был недоступен, но предусмотренный fallback сработал и build завершился; это не ошибка CI.
 
-Frontend:
+GitHub Actions frontend run `29555319923`, run number 14:
 
-- команда: `npm run build`;
-- результат: PASS, exit code 0;
-- Next.js 16.2.10 compiled successfully;
-- TypeScript stage PASS;
-- 26 static pages generated;
-- route map включает public, admin documents и API proxy routes.
+- commit `3a5d78b`;
+- conclusion: `success`;
+- Pin npm, install, lint, build, GHCR image push и `Trigger Dokploy deploy`: все `success`.
 
-Backend:
+## 7. Проверки backend
 
-- команда: `npm run build`;
-- результат: PASS, exit code 0;
-- `nest build` завершён без ошибок.
+- root production Dockerfile build: PASS;
+- clean image `npm ci`: PASS, 900 packages;
+- `npx prisma generate`: PASS;
+- `npm run build`: PASS;
+- production runner не содержит `/app/src` и `/app/tsconfig.json`, содержит `/app/prisma/seed.constants.ts`: PASS;
+- imports из `prisma/seed*.ts` в `src/**`: отсутствуют;
+- Jest unit tests: 3 suites, 23/23 tests PASS;
+- workflow YAML parse: PASS.
 
-Dev/preview/start servers текущей задачей не запускались. После build новых cleanup-кандидатов не появилось.
+Изолированная runtime-проверка использовала task-only PostgreSQL, отдельные Docker network/DB volume/storage volume и непубликуемый наружу port 4000. Production DB, production volume, main `storage` и uploads не использовались.
 
-## 10. Итоговый Git status
+Startup chain:
 
-Выполнен `git status --short` в обоих репозиториях.
+1. `Document storage directories are ready` — PASS;
+2. bootstrap создал только тестовую БД `kciasso_verify` — PASS;
+3. `prisma migrate deploy` применил 8 migrations к этой тестовой БД — PASS;
+4. `prisma db seed` — PASS;
+5. `node dist/src/main.js` — Nest сообщил successful startup, container остался `running`;
+6. внутренний HTTP check вернул 404 на несуществующий `/api`, подтвердив работающий listener;
+7. `/app/storage/documents` и `/app/storage/tmp` внутри подключённого volume существуют;
+8. повторный seed на той же базе — PASS, container продолжил работать.
 
-Frontend:
+Первый ручной повтор seed через прямой `docker exec prisma` получил `ts-node ENOENT`, потому что direct exec не наследует npm-script PATH. Повтор с production-equivalent `PATH=/app/node_modules/.bin:$PATH` прошёл; штатный `npm run start:container` имел правильный PATH и с первого раза успешно выполнил seed.
 
-- 128 status entries;
-- 49 tracked changes: 46 modified, 3 deleted;
-- 79 untracked entries;
-- `.task-*`, `*.tsbuildinfo` и task logs отсутствуют.
+GitHub Actions backend run `29555274050`, run number 8:
 
-Backend:
+- commit `588f2b7`;
+- conclusion: `success`;
+- root image build/push и `Trigger Dokploy deploy`: все `success`.
 
-- 34 status entries;
-- 20 tracked modified files;
-- 14 untracked entries;
-- `.task-*`, `*.tsbuildinfo` и task logs отсутствуют.
+## 8. Docker/Dokploy и что перезапускать
 
-Большой dirty status существовал до текущей задачи. Текущая задача не меняла production source, tests, API, Prisma, migrations, generated files, package manifests или lockfiles. Из tracked documentation обновлены только канонические `PROJECT_STATE.md` и `отчёт.txt`; четыре удалённых logs игнорировались Git правилом `*.log`.
+Оба успешных workflow уже опубликовали SHA-tagged/latest GHCR images и успешно вызвали Dokploy `application.deploy`. Поэтому повторный GitHub Actions rerun не требуется.
 
-## 11. Команды и безопасность
+Если Dokploy UI всё ещё показывает старые containers, вручную redeploy/recreate нужно сделать для обеих applications:
 
-Основные действия:
+- frontend image/commit `3a5d78bcf3a22a66b87ad58b407296c721e6f399`;
+- backend image/commit `588f2b74770291af5fd9ab5cb17416cb9dcf138e`.
 
-- чтение `AGENTS.md`, `PROJECT_STATE.md`, предыдущего отчёта;
-- `Get-NetTCPConnection` для port/PID mapping;
-- `Get-CimInstance Win32_Process` и process current-directory inspection;
-- Restart Manager read-only mapping file locks;
-- два exact `Stop-Process -Id`;
-- четыре exact `Remove-Item -LiteralPath` после проверки абсолютного backend root;
-- frontend/backend `npm run build`;
-- итоговая artifact, process, port и Git проверка.
+Dokploy application-side branch/settings не были доступны без его API/UI credentials. Однако фактический deploy path подтверждён workflow: build идёт из `master`, image публикуется, затем Dokploy deploy endpoint успешно вызывается.
 
-Не использовались `git reset`, `git restore`, `git clean`, global kill и массовое удаление wildcard.
+## 9. Процессы, ports и cleanup
 
-## 12. Review и итог
+До задачи Docker Desktop был выключен; listeners 3000/4000 отсутствовали. Для Linux/image/runtime проверок Docker Desktop был запущен задачей. Все созданные задачей containers остановлены exact name и удалены:
 
-Self-review выполнен по требованиям задачи и фактическим действиям. Остановлены только два подтверждённых listener PID; удалены только четыре заранее перечисленных task logs; source/data/generated/product artifacts не затронуты. Ports 4114/4401 освобождены, builds проходят, task artifacts в репозиториях отсутствуют.
+- `kciasso-task-front-staged-copy`;
+- `kciasso-task-backend-runtime`;
+- `kciasso-task-postgres`.
 
-`PROJECT_STATE.md` обновлён компактно: устаревший blocker о locked logs удалён, cleanup отмечен завершённым. Codebase Memory не обновлялся, потому что source/architecture не менялись.
+Удалены task-only images, network и volumes. Ранее существовавший `docker-db-1` не останавливался и не изменялся. В конце Docker Desktop возвращён в исходное выключенное состояние.
+
+Финальные ports 3000, 4000, 4114 и 4401 свободны. Dev servers не запускались, host ports для runtime test не публиковались.
+
+## 10. Итоговый status и риски
+
+После remote verification оба code trees совпадали с `origin/master` и были clean. Канонические `PROJECT_STATE.md`/`отчёт.txt` сохраняются отдельным documentation commit с `[skip ci]`; production deploy code остаётся в подтверждённом commit `588f2b7`, а обновление отчёта не запускает лишний image deploy.
+
+Оставшиеся риски:
+
+- backend GitHub default branch/remote HEAD всё ещё `main`, хотя deploy branch и local branch — `master`; настройку default branch следует отдельно переключить на `master`, не удаляя legacy `main` без решения владельца;
+- фактическую версию запущенных containers в Dokploy UI нельзя независимо прочитать без credentials;
+- frontend build использует fallback, когда backend недоступен во время prerender; это существующее предусмотренное поведение, не причина текущего CI сбоя.
+
+## 11. Безопасность и review
+
+Не использовались `git reset`, `git restore`, `git clean`, force push, global kill, production DB/storage и destructive tests. Пользовательские процессы/volumes не изменялись. Self-review проверил exact diffs, seed import graph, workflow syntax, clean Linux builds, production runtime, повторный seed, remote hashes и individual GitHub Actions steps.
