@@ -1,135 +1,104 @@
-# KCIASSO — исправление прокрутки modal «Выбор размещений»
+# KCIASSO — исправление ошибки `prisma generate` в Docker build
 
-Дата: 2026-07-16.
+Дата: 2026-07-18.
 
 ## Цель
 
-Исправить только прокрутку modal «Выбор размещений», предварительно подтвердив причину в реальном браузере. Permissions, backend source, Prisma, API, Kubb и business logic не изменялись.
+Устранить ошибку backend deployment на шаге `RUN npx prisma generate` в root `Dockerfile`. Изменение ограничено Prisma generator output path; permissions, API, migrations, DTO business logic и runtime behavior не менялись.
 
-## Диагностика до изменений
+## Ошибка и состояние до исправления
 
-Проверка выполнена в Chromium через Playwright на уже работавших пользовательских KCIASSO frontend/backend (`3000`/`4000`). Процессы использовались только read-only, не перезапускались и не останавливались.
+GitHub Actions падал на:
 
-Сценарий:
+```text
+Dockerfile:13
+RUN npx prisma generate
+process ... did not complete successfully: exit code: 1
+```
 
-1. Выполнен вход в admin UI.
-2. Открыты «Документы» → «Добавить документ» → «Изменить размещение».
-3. В modal раскрыта группа «Качество образования» с 31 пунктом.
-4. Сняты DOM dimensions и computed styles overlay, dialog, общего списка, раскрытой группы и footer.
+В логе Prisma показывала два output path:
 
-Исходные метрики на 1366×768:
+```text
+output = "../node_modules/@prisma/client"
+output = "../node_modules/.prisma/client"
+```
 
-- предполагаемый scroll area `.placementGroups`: `clientHeight=494`, `scrollHeight=494`, `overflow-y=auto`, `min-height=0`, computed height `494.25px`, `max-height=none`;
-- раскрытая `.placementGroup`: `clientHeight=87`, `scrollHeight=1541`, computed height `88.6875px`, `overflow-y=hidden`, `max-height=none`;
-- dialog: flex-column, `clientHeight=744`, computed height/max-height `744px`, без фиксированной `height` в CSS;
-- footer был видим, но содержимое группы обрезалось;
-- body имел `overflow:hidden`;
-- горизонтального document overflow не было.
+Локальный `npx prisma generate` в существующем рабочем `node_modules` проходил, поэтому локальная проверка была недостаточной. Рабочий Docker image выполняет чистый `npm ci`, после чего Prisma видит настоящий package directory `node_modules/@prisma/client`.
 
-Исходные browser regression tests подтвердили баг на обоих viewport:
+## Воспроизведение причины
 
-- 1366×768: `scrollHeight=494`, `clientHeight=494`;
-- 390×844: `scrollHeight=526`, `clientHeight=526`.
+Создана task-only чистая копия backend без `node_modules`, `dist`, storage, uploads, `.env` и `.data`.
 
-Обе проверки закономерно упали на условии `scrollHeight > clientHeight`.
+1. `npm ci --no-audit --no-fund` — PASS, 900 packages.
+2. В чистой копии исходный `npx prisma generate` — FAIL с точным сообщением Prisma:
 
-## Точная причина
+```text
+Generating client into ...\node_modules\@prisma\client is not allowed.
+This package is used by `prisma generate` and overwriting its content is dangerous.
+Suggestion: replace output "../node_modules/@prisma/client" with "../node_modules/.prisma/client".
+```
 
-Общий список был CSS Grid внутри flex dialog. При ограничении modal по `max-height` grid распределял доступную высоту между implicit rows и сжимал раскрытую строку группы примерно до 87 px. Одновременно `.placementGroup { overflow: hidden; }` обрезал её реальное содержимое высотой 1541 px.
-
-Из-за clipping переполнение раскрытой группы не участвовало в scrollable overflow родительского `.placementGroups`: у общего списка получалось `scrollHeight == clientHeight`, поэтому wheel и изменение `scrollTop` не могли прокручивать список.
-
-Проблема не была вызвана body lock, `preventDefault`, touch events или portal events. Глобальный `preventDefault` не используется; успешный wheel test после исправления это дополнительно подтверждает.
+Это подтверждает, что причина — генерация Client непосредственно поверх установленного `@prisma/client` package directory. Текущий локальный `node_modules` скрывал проблему остаточным ранее сгенерированным содержимым.
 
 ## Исправление
 
-- Overlay приведён к фиксированной grid-структуре с `padding: 12px` и `overflow: hidden`.
-- Dialog получил обязательную фиксированную высоту `min(860px, calc(100dvh - 24px))` и grid rows `auto auto minmax(0, 1fr) auto`.
-- Единственным scroll container остаётся `.placementGroups` между search и footer.
-- Для implicit rows списка установлено `grid-auto-rows: max-content`, поэтому раскрытая группа сохраняет естественную высоту.
-- У `.placementGroup` удалён собственный `overflow:hidden`; фиксированного `max-height` у accordion panel нет.
-- Header, search и footer находятся в отдельных grid rows и не прокручиваются.
-- Существующая логика одной одновременно раскрытой группы и body lock не изменялась.
+В `prisma/schema.prisma` изменён только generator output:
 
-## Метрики после исправления
+```prisma
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+```
 
-1366×768:
+Это стандартный Prisma path. Импорты `@prisma/client` остаются без изменений: package forwarding автоматически использует `.prisma/client`.
 
-- `.placementGroups`: `clientHeight=494`, `scrollHeight=1948`, `overflow-y=auto`, `min-height=0`;
-- раскрытая группа: `clientHeight=1541`, `scrollHeight=1541`, `overflow-y=visible`, `max-height=none`;
-- programmatic `scrollTop=1453.6`;
-- wheel `scrollTop=1453.6`;
-- последний пункт видим;
-- footer видим.
+Не изменялись:
 
-390×844:
+- модели и поля Prisma;
+- migrations и database contract;
+- Nest controllers/services/guards;
+- API/OpenAPI/Kubb;
+- Docker runtime command и storage mounts;
+- permissions и business logic.
 
-- `.placementGroups`: `clientHeight=526`, `scrollHeight=2164`, `overflow-y=auto`, `min-height=0`;
-- раскрытая группа: `clientHeight=1757`, `scrollHeight=1757`, `overflow-y=visible`, `max-height=none`;
-- programmatic `scrollTop=1637.6`;
-- wheel `scrollTop=1637.6`;
-- последний пункт видим;
-- footer видим.
+## Проверки после исправления
 
-На обоих viewport overlay и dialog не имеют горизонтального overflow; общий scroll area также имеет `scrollWidth <= clientWidth`. Body во время modal заблокирован и после закрытия восстанавливается.
+### Основной backend
+
+- `npx prisma generate`: PASS.
+- `npm run build`: PASS.
+- `npm test -- --runInBand`: PASS, 5 suites, 30/30 tests.
+- `git diff --check`: PASS.
+
+### Чистая task-only копия
+
+- `npm ci --no-audit --no-fund`: PASS, 900 packages.
+- `npx prisma generate` с исправленной schema: PASS.
+- `npm run build`: PASS.
+
+Первый build чистой копии до копирования одного исключённого при подготовке test copy source-подкаталога `src/system/documents/storage` дал ожидаемые TS2307 из-за ошибки самого test-copy filter, не проекта. После включения этого source-подкаталога build прошёл.
+
+### Docker
+
+Docker build локально не запускался: Docker daemon Desktop был выключен и endpoint `npipe:////./pipe/dockerDesktopLinuxEngine` недоступен. Поэтому требуемая финальная проверка Docker должна быть выполнена GitHub Actions/Dokploy после публикации изменения. Сама failing команда Prisma воспроизведена в чистом npm окружении и исправлена тем же output path.
 
 ## Изменённые файлы
 
-Frontend:
+- `D:\Desktop\dev\web\orders\kciasso-backend\prisma\schema.prisma` — единственная production source правка: output Prisma Client.
+- `D:\Desktop\dev\web\orders\kciasso-backend\PROJECT_STATE.md` — актуализирован generated path и verification state.
+- `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt` — полностью перезаписан этим отчётом.
 
-- `src/widgets/admin/AdminDocumentsPanel/PlacementSelector.module.scss` — root-cause CSS fix;
-- `tests/browser/placement-selector-scroll.spec.ts` — постоянный browser regression test;
-- `playwright.config.ts` — desktop/mobile browser projects;
-- `package.json` — команда `test:browser` и `@playwright/test`;
-- `package-lock.json` — lockfile, нормализованный npm 10.9.8.
-
-Документация логического проекта:
-
-- `D:\Desktop\dev\web\orders\kciasso-backend\PROJECT_STATE.md` — актуализирована browser verification и команда проверки;
-- `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt` — полностью перезаписан данным отчётом.
-
-Frontend TypeScript components, permissions, backend source, Prisma schema/migrations, API, OpenAPI, Kubb generated files и business logic не изменялись этой задачей.
-
-## Автотест и acceptance
-
-Постоянный Playwright test для каждого viewport:
-
-- открывает modal;
-- раскрывает группу из 31 пункта;
-- проверяет `scrollHeight > clientHeight`;
-- проверяет реальное увеличение `scrollTop` programmatic scroll;
-- повторяет проверку через wheel;
-- проверяет видимость последнего пункта;
-- проверяет постоянную видимость footer;
-- проверяет body lock и его восстановление;
-- проверяет отсутствие горизонтального overflow.
-
-Финальный результат: 2/2 browser projects PASS (`desktop-1366x768`, `mobile-390x844`).
-
-## Остальные проверки
-
-- `npm run test:unit`: PASS, 12 test files, 41/41 tests.
-- `npm run lint`: PASS.
-- `npx npm@10.9.8 ci` в task-only clean copy: PASS, 699 packages.
-- `npm run build` в той же clean copy: PASS, Next.js 16.2.10 production build, 26 static pages generated.
-- `git diff --check`: PASS.
-- Frontend Codebase Memory: refreshed, 2197 nodes / 4615 edges, `persistence=false`, repository artifact не создан.
-
-Первый isolated build с junction на исходный `node_modules` был отклонён Turbopack до компиляции: symlink выходил за filesystem root. Junction был удалён, затем создана чистая task-only copy с обычным `npm ci`; стандартный build прошёл. Это ограничение временной build-среды, не ошибка приложения.
-
-## Review
-
-Self-review проверил соответствие требуемой overlay/dialog/scroll-area структуре, отсутствие изменений business logic, устойчивость selectors, desktop/mobile сценарии, body lock, wheel/programmatic scroll и lockfile через clean `npm ci`. Блокирующих замечаний не найдено.
+Generated Prisma Client в `node_modules/.prisma/client` пересоздан штатной командой и не является Git-изменением. Kubb generated files не изменялись.
 
 ## Процессы, порты и cleanup
 
-- До задачи пользовательский frontend слушал 3000 (PID 10748), backend слушал 4000 (PID 27488).
-- Эти процессы не останавливались, не перезапускались и не изменялись.
-- Task-owned dev/start servers не запускались; 3417 и 4417 не использовались.
-- Playwright browsers создавались test runner и штатно закрывались после каждого запуска.
-- Все task-only build copies, screenshots, диагностический script и `test-results` удалены по точным проверенным путям.
-- Global kill не применялся.
+- Dev/backend servers не запускались.
+- Пользовательские процессы и порты не затрагивались.
+- Docker daemon не запускался.
+- Чистая test-only копия и временные файлы после проверки удалены по точным task-owned путям.
+- Global kill, `git reset`, `git restore`, `git clean` и destructive операции над репозиторием/production storage не применялись.
 
-## Итог
+## Итог и следующий шаг
 
-Теперь прокручивается только общий `.placementGroups`; `scrollHeight` действительно больше `clientHeight`, последний пункт достижим wheel и programmatic scroll, footer всегда видим, body lock корректно восстанавливается. Исправление ограничено frontend layout и browser regression coverage.
+Причина подтверждена чистым окружением, output path исправлен на `node_modules/.prisma/client`, локальная и clean-copy генерация/build/tests проходят. Следующий обязательный шаг — rerun backend Docker/GitHub Actions build; ожидается, что `RUN npx prisma generate` больше не будет падать.

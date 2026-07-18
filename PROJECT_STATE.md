@@ -1,6 +1,6 @@
 # KCIASSO — PROJECT_STATE
 
-Last updated: 2026-07-16, placement selector scrolling fixed and browser-verified.
+Last updated: 2026-07-18, Prisma Docker generation path fixed and backend build verified.
 
 ## Logical project
 
@@ -42,8 +42,7 @@ Last updated: 2026-07-16, placement selector scrolling fixed and browser-verifie
 - Frontend checks: `npm run test:unit`, `npm run test:browser -- --workers=1`, `npm run lint`, `npm run build`.
 - Backend checks: `npx prisma generate`, `npm test -- --runInBand`, `npm run test:e2e`, `npm run build`.
 - Backend production start: `npm run start:container`; seed is controlled by `RUN_SEED_ON_BOOT=true`.
-- Generated paths: frontend Kubb client under `src/shared/api/generated`; backend Prisma DTOs under `src/.generated/prisma`. Do not edit either manually.
-- Prisma Client output is explicitly `node_modules/@prisma/client`.
+- Generated paths: frontend Kubb client under `src/shared/api/generated`; backend Prisma DTOs under `src/.generated/prisma`; Prisma Client under `node_modules/.prisma/client`. Do not edit generated output manually.
 
 ## Verification
 
@@ -52,6 +51,7 @@ Last updated: 2026-07-16, placement selector scrolling fixed and browser-verifie
 - Non-fixing ESLint for all changed backend TypeScript files passed.
 - Full backend ESLint still reports 19 pre-existing formatting issues in unrelated site-settings/error DTO files.
 - Placement selector browser acceptance passed at 1366×768 and 390×844: wheel/programmatic scrolling, last item visibility, fixed footer, body lock restoration and no horizontal overflow.
+- Backend `npx prisma generate`, `npm run build` and unit tests pass after switching Prisma Client output to the standard `.prisma/client` path. Clean `npm ci` copy also generates and builds successfully.
 
 ## Constraints and known risks
 
@@ -59,6 +59,7 @@ Last updated: 2026-07-16, placement selector scrolling fixed and browser-verifie
 - Do not run destructive checks against production DB or storage.
 - Main storage/uploads and user processes must remain untouched.
 - Deploy must apply migration `20260716230000_simple_admin_permissions` before the updated backend serves traffic.
+- CI Docker build must be rerun after the Prisma generator-path fix; local Docker daemon was unavailable during this verification.
 - Legacy `UserSectionPermission` can be removed only in a later compatibility-breaking migration after deployment validation.
 - Perform manual browser acceptance of Users and News upload when an appropriate runtime is available.
 
