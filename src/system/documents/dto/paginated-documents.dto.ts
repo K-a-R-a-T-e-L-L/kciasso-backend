@@ -4,7 +4,7 @@ import { DocumentDto } from './document.dto'
 
 export class DocumentPaginationMetaDto {
     @ApiProperty() page!: number
-    @ApiProperty() limit!: number
+    @ApiProperty() pageSize!: number
     @ApiProperty() total!: number
     @ApiProperty() totalPages!: number
 }

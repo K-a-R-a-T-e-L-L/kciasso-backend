@@ -49,15 +49,27 @@ export class DocumentShareLinksService {
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const generated = createDocumentShareToken()
             try {
-                const link = await this.prisma.documentShareLink.create({
-                    data: {
-                        document_version_id: version.id,
-                        token_hash: generated.tokenHash,
-                        token_prefix: generated.tokenPrefix,
-                        expires_at: expiresAt,
-                        created_by_id: actor.id,
-                    },
-                    include: { document_version: { include: { document: { include: { placements: true } } } } },
+                const link = await this.prisma.$transaction(async transaction => {
+                    await transaction.$executeRaw(
+                        Prisma.sql`SELECT pg_advisory_xact_lock(4242, CAST(${version.document.id} AS integer))`
+                    )
+                    await transaction.documentShareLink.updateMany({
+                        where: {
+                            revoked_at: null,
+                            document_version: { document_id: version.document.id },
+                        },
+                        data: { revoked_at: new Date() },
+                    })
+                    return transaction.documentShareLink.create({
+                        data: {
+                            document_version_id: version.id,
+                            token_hash: generated.tokenHash,
+                            token_prefix: generated.tokenPrefix,
+                            expires_at: expiresAt,
+                            created_by_id: actor.id,
+                        },
+                        include: { document_version: { include: { document: { include: { placements: true } } } } },
+                    })
                 })
                 return {
                     ...this.toDto(link),
@@ -82,12 +94,13 @@ export class DocumentShareLinksService {
     async list(versionId: number, actor: User): Promise<DocumentShareLinkDto[]> {
         const version = await this.findVersionOrThrow(versionId)
         this.accessPolicy.assertCanManage(actor, version.document.placements)
-        const links = await this.prisma.documentShareLink.findMany({
-            where: { document_version_id: version.id },
+        const link = await this.prisma.documentShareLink.findFirst({
+            where: { document_version: { document_id: version.document.id }, revoked_at: null },
             include: { document_version: { include: { document: { include: { placements: true } } } } },
             orderBy: { created_at: 'desc' },
         })
-        return links.map(link => this.toDto(link))
+        if (!link || (link.expires_at && link.expires_at <= new Date())) return []
+        return [this.toDto(link)]
     }
 
     async revoke(id: number, actor: User): Promise<DocumentShareLinkDto> {

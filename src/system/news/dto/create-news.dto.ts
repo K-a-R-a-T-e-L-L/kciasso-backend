@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
+import { Transform, Type } from 'class-transformer'
 import { IsBoolean, IsDate, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator'
 
 export class CreateNewsDto {
@@ -9,11 +9,13 @@ export class CreateNewsDto {
     @MaxLength(255)
     title: string
 
-    @ApiProperty()
+    @ApiPropertyOptional({ description: 'Оставьте пустым для автоматической генерации из заголовка' })
+    @Transform(({ value }) => (typeof value === 'string' && !value.trim() ? undefined : value))
+    @IsOptional()
     @IsString()
     @MinLength(3)
     @MaxLength(255)
-    slug: string
+    slug?: string
 
     @ApiProperty()
     @IsString()
@@ -25,10 +27,10 @@ export class CreateNewsDto {
     @MinLength(3)
     content: string
 
-    @ApiPropertyOptional()
+    @ApiPropertyOptional({ nullable: true })
     @IsOptional()
     @IsString()
-    coverImageUrl?: string
+    coverImageUrl?: string | null
 
     @ApiPropertyOptional()
     @Type(() => Number)

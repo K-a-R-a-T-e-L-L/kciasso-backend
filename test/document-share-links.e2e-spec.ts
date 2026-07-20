@@ -229,6 +229,52 @@ describe('Document secret share links (e2e)', () => {
         expect(secondResolved.body).toEqual(pdfV2)
     })
 
+    it('keeps exactly one non-revoked link per document across versions and replaces concurrently', async () => {
+        const first = await request(app.getHttpServer())
+            .post(`/api/admin/document-versions/${versionOneId}/share-links`)
+            .set('Authorization', `Bearer ${superAdminToken}`)
+            .send({})
+        const second = await request(app.getHttpServer())
+            .post(`/api/admin/document-versions/${versionTwoId}/share-links`)
+            .set('Authorization', `Bearer ${superAdminToken}`)
+            .send({})
+        expect(first.status).toBe(201)
+        expect(second.status).toBe(201)
+        shareLinkIds.push(first.body.id, second.body.id)
+
+        const oldResolved = await request(app.getHttpServer())
+            .post('/api/public/document-share-links/resolve')
+            .send({ token: first.body.token })
+        expect(oldResolved.status).toBe(404)
+        const newResolved = await request(app.getHttpServer())
+            .post('/api/public/document-share-links/resolve')
+            .send({ token: second.body.token })
+        expect(newResolved.status).toBe(200)
+
+        await Promise.all([
+            request(app.getHttpServer())
+                .post(`/api/admin/document-versions/${versionOneId}/share-links`)
+                .set('Authorization', `Bearer ${superAdminToken}`)
+                .send({}),
+            request(app.getHttpServer())
+                .post(`/api/admin/document-versions/${versionTwoId}/share-links`)
+                .set('Authorization', `Bearer ${superAdminToken}`)
+                .send({}),
+        ])
+
+        const rows = await prisma.documentShareLink.findMany({
+            where: { document_version: { document_id: documentId }, revoked_at: null },
+        })
+        expect(rows).toHaveLength(1)
+        const current = rows[0]
+        const listedFromVersionOne = await request(app.getHttpServer())
+            .get(`/api/admin/document-versions/${versionOneId}/share-links`)
+            .set('Authorization', `Bearer ${superAdminToken}`)
+        expect(listedFromVersionOne.status).toBe(200)
+        expect(listedFromVersionOne.body).toHaveLength(1)
+        expect(listedFromVersionOne.body[0].id).toBe(current.id)
+    })
+
     it('supports future expiry and idempotent revoke without deleting the file', async () => {
         const created = await request(app.getHttpServer())
             .post(`/api/admin/document-versions/${versionTwoId}/share-links`)

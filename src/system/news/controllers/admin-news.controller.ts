@@ -9,6 +9,8 @@ import { AdminNewsQueryDto } from '../dto/admin-news-query.dto'
 import { AdminNewsDto } from '../dto/admin-news.dto'
 import { CreateNewsCategoryDto } from '../dto/create-news-category.dto'
 import { CreateNewsDto } from '../dto/create-news.dto'
+import { MoveNewsCategoryDto } from '../dto/move-news-category.dto'
+import { NewsCategoryMoveResponseDto } from '../dto/news-category-move-response.dto'
 import { PaginatedAdminNewsDto } from '../dto/paginated-admin-news.dto'
 import { UpdateNewsCategoryDto } from '../dto/update-news-category.dto'
 import { UpdateNewsDto } from '../dto/update-news.dto'
@@ -97,6 +99,17 @@ export class AdminNewsController {
     @ApiResponse({ status: 404, type: ErrorDto })
     async updateCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateNewsCategoryDto) {
         return this.newsService.updateCategory(id, dto)
+    }
+
+    @Post('news-categories/:id/move')
+    @RequireAdminCapability('news')
+    @ApiOperation({ summary: 'Move a news category up or down' })
+    @ApiResponse({ status: 200, type: NewsCategoryMoveResponseDto })
+    @ApiResponse({ status: 400, type: ErrorDto })
+    @ApiResponse({ status: 403, type: ErrorDto })
+    @ApiResponse({ status: 404, type: ErrorDto })
+    async moveCategory(@Param('id', ParseIntPipe) id: number, @Body() dto: MoveNewsCategoryDto) {
+        return this.newsService.moveCategory(id, dto.direction)
     }
 
     @Delete('news-categories/:id')

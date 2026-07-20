@@ -3,7 +3,14 @@ import { createReadStream } from 'node:fs'
 import { open, rm } from 'node:fs/promises'
 import { pipeline } from 'node:stream/promises'
 
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common'
+import {
+    BadRequestException,
+    ConflictException,
+    ForbiddenException,
+    Injectable,
+    NotFoundException,
+    Optional,
+} from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { DocumentStatus, Prisma, User } from '@prisma/client'
 
@@ -12,8 +19,9 @@ import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
 import { getAppConfig } from '../../../config/app.config'
 import { PrismaService } from '../../../prisma/prisma.service'
+import { DOCUMENT_SECTIONS } from '../documents.constants'
 import { CreateDocumentDto } from '../dto/create-document.dto'
-import { DocumentQueryDto } from '../dto/document-query.dto'
+import { DocumentQueryDto, DocumentSortBy, DocumentSortDirection } from '../dto/document-query.dto'
 import { DocumentVersionDto } from '../dto/document-version.dto'
 import { DocumentDto } from '../dto/document.dto'
 import { PaginatedDocumentsDto } from '../dto/paginated-documents.dto'
@@ -220,30 +228,78 @@ export class DocumentsService {
     }
 
     async getDocuments(query: DocumentQueryDto, actor: User): Promise<PaginatedDocumentsDto> {
-        const section = this.placementService.getSectionOrThrow(query.placementKey)
-        this.accessPolicy.assertPlacementAccess(actor, section.key)
+        const pageSize = query.pageSize ?? query.limit ?? 20
+        const placementKey = query.placementKey?.trim() || undefined
+        const section = placementKey ? this.placementService.getSectionOrThrow(placementKey) : undefined
+        if (section) this.accessPolicy.assertPlacementAccess(actor, section.key)
+        const groupKeys = query.group
+            ? DOCUMENT_SECTIONS.filter(item => item.group === this.toGroupKey(query.group!)).map(item => item.key)
+            : undefined
+        if (query.group && (!groupKeys || groupKeys.length === 0))
+            throw new BadRequestException('Unknown document group')
+        if (section && query.group && section.group !== this.toGroupKey(query.group)) {
+            throw new BadRequestException('Placement does not belong to selected group')
+        }
+        const allowedKeys = DOCUMENT_SECTIONS.filter(item => this.accessPolicy.canAccessPlacement(actor, item.key)).map(
+            item => item.key
+        )
+        if (allowedKeys.length === 0) throw new BadRequestException('No document placements are available')
+        if (query.group && !groupKeys!.some(key => allowedKeys.includes(key)))
+            throw new ForbiddenException('Document group access is required')
+        if (query.sortBy === DocumentSortBy.PLACEMENT_ORDER && !section)
+            throw new BadRequestException('Placement order requires an exact placement')
+        const scopeKeys = section
+            ? [section.key]
+            : groupKeys
+              ? groupKeys.filter(key => allowedKeys.includes(key))
+              : allowedKeys
         const where: Prisma.DocumentWhereInput = {
-            placements: { some: { section_key: section.key } },
+            placements: { some: { section_key: { in: scopeKeys } } },
             deleted_at: null,
             ...(query.status ? { status: query.status } : {}),
+            ...(query.search
+                ? {
+                      OR: [
+                          { title: { contains: query.search, mode: 'insensitive' } },
+                          { description: { contains: query.search, mode: 'insensitive' } },
+                          { document_number: { contains: query.search, mode: 'insensitive' } },
+                      ],
+                  }
+                : {}),
         }
-        const [allItems, total] = await this.prisma.$transaction([
-            this.prisma.document.findMany({
+        const orderBy: Prisma.DocumentOrderByWithRelationInput[] = this.documentOrderBy(query, section?.key)
+        const result = await this.prisma.$transaction(async transaction => {
+            const total = await transaction.document.count({ where })
+            const totalPages = Math.ceil(total / pageSize)
+            const page = total > 0 ? Math.min(query.page, totalPages) : 1
+            let items = await transaction.document.findMany({
                 where,
+                orderBy,
+                skip: (page - 1) * pageSize,
+                take: pageSize,
                 include: { current_version: true, placements: true, _count: { select: { versions: true } } },
-            }),
-            this.prisma.document.count({ where }),
-        ])
-        const items = allItems
-            .sort((a, b) => {
-                const aOrder = a.placements.find(item => item.section_key === section.key)?.sort_order ?? 0
-                const bOrder = b.placements.find(item => item.section_key === section.key)?.sort_order ?? 0
-                return aOrder - bOrder || a.id - b.id
             })
-            .slice((query.page - 1) * query.limit, query.page * query.limit)
+            if (query.sortBy === DocumentSortBy.PLACEMENT_ORDER && section) {
+                const ordered = await transaction.documentPlacement.findMany({
+                    where: { section_key: section.key, document: where },
+                    orderBy: [{ sort_order: query.sortDirection ?? 'asc' }, { document_id: 'asc' }],
+                    skip: (page - 1) * pageSize,
+                    take: pageSize,
+                    select: { document_id: true },
+                })
+                const ids = ordered.map(item => item.document_id)
+                const loaded = await transaction.document.findMany({
+                    where: { ...where, id: { in: ids } },
+                    include: { current_version: true, placements: true, _count: { select: { versions: true } } },
+                })
+                const byId = new Map(loaded.map(item => [item.id, item]))
+                items = ids.map(id => byId.get(id)).filter((item): item is (typeof loaded)[number] => Boolean(item))
+            }
+            return { items, total, page, totalPages }
+        })
         return {
-            items: items.map(item => this.mapForActor(item, actor)),
-            meta: this.toPaginationMeta(query.page, query.limit, total),
+            items: result.items.map(item => this.mapForActor(item, actor)),
+            meta: { page: result.page, pageSize, total: result.total, totalPages: result.totalPages },
         }
     }
 
@@ -372,7 +428,9 @@ export class DocumentsService {
             {
                 placementKey: result.sectionKey,
                 page: 1,
-                limit: Math.max(1, result.documentCount),
+                pageSize: Math.min(100, Math.max(20, result.documentCount)),
+                sortBy: DocumentSortBy.PLACEMENT_ORDER,
+                sortDirection: DocumentSortDirection.ASC,
             },
             actor
         )
@@ -610,7 +668,32 @@ export class DocumentsService {
         if (filePath) await rm(filePath, { force: true }).catch(() => undefined)
     }
 
-    private toPaginationMeta(page: number, limit: number, total: number) {
-        return { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+    private documentOrderBy(query: DocumentQueryDto, placementKey?: string): Prisma.DocumentOrderByWithRelationInput[] {
+        const direction = query.sortDirection ?? DocumentSortDirection.DESC
+        const tie: Prisma.DocumentOrderByWithRelationInput = { id: 'asc' }
+        switch (query.sortBy ?? DocumentSortBy.UPDATED_AT) {
+            case DocumentSortBy.CREATED_AT:
+                return [{ created_at: direction }, tie]
+            case DocumentSortBy.TITLE:
+                return [{ title: direction }, tie]
+            case DocumentSortBy.DOCUMENT_DATE:
+                return [{ document_date: { sort: direction, nulls: 'last' } }, tie]
+            case DocumentSortBy.PLACEMENT_ORDER:
+                return placementKey ? [{ updated_at: direction }, tie] : [{ updated_at: direction }, tie]
+            default:
+                return [{ updated_at: direction }, tie]
+        }
+    }
+
+    private toGroupKey(group: string): 'gia-9' | 'gia-11' | 'gia' | 'quality' | 'regional' | 'about' {
+        const map = {
+            GIA_9: 'gia-9',
+            GIA_11: 'gia-11',
+            GIA: 'gia',
+            QUALITY: 'quality',
+            REGIONAL: 'regional',
+            ABOUT: 'about',
+        } as const
+        return map[group as keyof typeof map]
     }
 }

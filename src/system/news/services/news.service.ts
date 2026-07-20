@@ -10,6 +10,7 @@ import { AdminNewsQueryDto } from '../dto/admin-news-query.dto'
 import { AdminNewsDto } from '../dto/admin-news.dto'
 import { CreateNewsCategoryDto } from '../dto/create-news-category.dto'
 import { CreateNewsDto } from '../dto/create-news.dto'
+import { NEWS_CATEGORY_MOVE_DIRECTION } from '../dto/move-news-category.dto'
 import { NewsArticleDto } from '../dto/news-article.dto'
 import { NewsCategoryDto } from '../dto/news-category.dto'
 import { NewsListItemDto } from '../dto/news-list-item.dto'
@@ -21,6 +22,7 @@ import { PaginatedNewsDto } from '../dto/paginated-news.dto'
 import { UpdateNewsCategoryDto } from '../dto/update-news-category.dto'
 import { UpdateNewsDto } from '../dto/update-news.dto'
 import { NewsMediaService } from '../media/news-media.service'
+import { normalizeSlug, slugCandidate } from '../utils/slug.util'
 
 type NewsWithRelations = News & {
     category: NewsCategory | null
@@ -132,35 +134,48 @@ export class NewsService {
     async createNews(dto: CreateNewsDto, authorId?: number): Promise<AdminNewsDto> {
         await this.ensureCategoryExists(dto.categoryId)
 
-        try {
-            const item = await this.prisma.news.create({
-                data: {
-                    slug: dto.slug.trim(),
-                    title: dto.title.trim(),
-                    excerpt: dto.excerpt.trim(),
-                    content: dto.content.trim(),
-                    cover_image_url: dto.coverImageUrl?.trim() || null,
-                    is_published: dto.isPublished ?? false,
-                    published_at: this.resolvePublishedAt(dto.isPublished ?? false, dto.publishedAt),
-                    category_id: dto.categoryId ?? null,
-                    author_id: authorId ?? null,
-                },
-                include: {
-                    category: true,
-                    author: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
+        const title = dto.title.trim()
+        const manualSlug = this.manualSlugOrThrow(dto.slug)
+        const baseSlug = manualSlug ?? this.generatedSlug(title, 'news')
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            const slug = manualSlug ? baseSlug : this.withSuffix(baseSlug, attempt)
+            try {
+                const item = await this.prisma.news.create({
+                    data: {
+                        slug,
+                        title,
+                        excerpt: dto.excerpt.trim(),
+                        content: dto.content.trim(),
+                        cover_image_url: dto.coverImageUrl?.trim() || null,
+                        is_published: dto.isPublished ?? false,
+                        published_at: this.resolvePublishedAt(dto.isPublished ?? false, dto.publishedAt),
+                        category_id: dto.categoryId ?? null,
+                        author_id: authorId ?? null,
+                    },
+                    include: {
+                        category: true,
+                        author: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            },
                         },
                     },
-                },
-            })
+                })
 
-            return this.toAdminNewsDto(item)
-        } catch (error) {
-            this.rethrowKnownError(error, 'News slug is already in use')
+                return this.toAdminNewsDto(item)
+            } catch (error) {
+                if (this.isUniqueViolation(error) && !manualSlug) continue
+                this.rethrowKnownError(
+                    error,
+                    manualSlug ? 'Такой slug уже используется' : 'Не удалось создать уникальный slug'
+                )
+            }
         }
+        throw new BadRequestException(
+            new ErrorDto(ErrorCodeEnum.SLUG_ALREADY_IN_USE, 'Bad Request', 400, 'Не удалось создать уникальный slug')
+        )
     }
 
     async updateNews(id: number, dto: UpdateNewsDto): Promise<AdminNewsDto> {
@@ -174,7 +189,7 @@ export class NewsService {
             const item = await this.prisma.news.update({
                 where: { id },
                 data: {
-                    ...(dto.slug !== undefined ? { slug: dto.slug.trim() } : {}),
+                    ...(dto.slug !== undefined ? { slug: this.manualSlugOrThrow(dto.slug) } : {}),
                     ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
                     ...(dto.excerpt !== undefined ? { excerpt: dto.excerpt.trim() } : {}),
                     ...(dto.content !== undefined ? { content: dto.content.trim() } : {}),
@@ -204,7 +219,7 @@ export class NewsService {
             }
             return this.toAdminNewsDto(item)
         } catch (error) {
-            this.rethrowKnownError(error, 'News slug is already in use')
+            this.rethrowKnownError(error, 'Такой slug уже используется')
         }
     }
 
@@ -241,21 +256,40 @@ export class NewsService {
     }
 
     async createCategory(dto: CreateNewsCategoryDto): Promise<AdminNewsCategoryDto> {
-        try {
-            const category = await this.prisma.newsCategory.create({
-                data: {
-                    slug: dto.slug.trim(),
-                    title: dto.title.trim(),
-                    description: dto.description?.trim() || null,
-                    order: dto.order ?? 0,
-                    is_active: dto.isActive ?? true,
-                },
-            })
+        const title = dto.title.trim()
+        const manualSlug = this.manualSlugOrThrow(dto.slug)
+        const baseSlug = manualSlug ?? this.generatedSlug(title, 'category')
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            const slug = manualSlug ? baseSlug : this.withSuffix(baseSlug, attempt)
+            try {
+                const category = await this.prisma.$transaction(async transaction => {
+                    await transaction.$executeRawUnsafe('SELECT pg_advisory_xact_lock(780534092)')
+                    const order =
+                        dto.order ??
+                        ((await transaction.newsCategory.aggregate({ _max: { order: true } }))._max.order ?? -1) + 1
+                    return transaction.newsCategory.create({
+                        data: {
+                            slug,
+                            title,
+                            description: dto.description?.trim() || null,
+                            order,
+                            is_active: dto.isActive ?? true,
+                        },
+                    })
+                })
 
-            return this.toAdminNewsCategoryDto(category, 0)
-        } catch (error) {
-            this.rethrowKnownError(error, 'Category slug is already in use')
+                return this.toAdminNewsCategoryDto(category, 0)
+            } catch (error) {
+                if (this.isUniqueViolation(error) && !manualSlug) continue
+                this.rethrowKnownError(
+                    error,
+                    manualSlug ? 'Такой slug уже используется' : 'Не удалось создать уникальный slug'
+                )
+            }
         }
+        throw new BadRequestException(
+            new ErrorDto(ErrorCodeEnum.SLUG_ALREADY_IN_USE, 'Bad Request', 400, 'Не удалось создать уникальный slug')
+        )
     }
 
     async updateCategory(id: number, dto: UpdateNewsCategoryDto): Promise<AdminNewsCategoryDto> {
@@ -265,7 +299,7 @@ export class NewsService {
             const category = await this.prisma.newsCategory.update({
                 where: { id },
                 data: {
-                    ...(dto.slug !== undefined ? { slug: dto.slug.trim() } : {}),
+                    ...(dto.slug !== undefined ? { slug: this.manualSlugOrThrow(dto.slug) } : {}),
                     ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
                     ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
                     ...(dto.order !== undefined ? { order: dto.order } : {}),
@@ -282,8 +316,47 @@ export class NewsService {
 
             return this.toAdminNewsCategoryDto(category, newsCount)
         } catch (error) {
-            this.rethrowKnownError(error, 'Category slug is already in use')
+            this.rethrowKnownError(error, 'Такой slug уже используется')
         }
+    }
+
+    async moveCategory(
+        id: number,
+        direction: NEWS_CATEGORY_MOVE_DIRECTION
+    ): Promise<{ items: AdminNewsCategoryDto[] }> {
+        if (![NEWS_CATEGORY_MOVE_DIRECTION.UP, NEWS_CATEGORY_MOVE_DIRECTION.DOWN].includes(direction)) {
+            throw new BadRequestException(
+                new ErrorDto(ErrorCodeEnum.INVALID_QUERY_STRING, 'Bad Request', 400, 'Invalid move direction')
+            )
+        }
+
+        const categories = await this.prisma.$transaction(async transaction => {
+            await transaction.$executeRawUnsafe('SELECT pg_advisory_xact_lock(780534092)')
+            const all = await transaction.newsCategory.findMany({
+                orderBy: [{ order: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
+            })
+            const targetIndex = all.findIndex(category => category.id === id)
+            if (targetIndex < 0) {
+                throw new NotFoundException(
+                    new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News category not found')
+                )
+            }
+            const normalized = all.map((category, index) => ({ ...category, order: index }))
+            const offset = direction === NEWS_CATEGORY_MOVE_DIRECTION.UP ? -1 : 1
+            const neighbourIndex = targetIndex + offset
+            if (neighbourIndex >= 0 && neighbourIndex < normalized.length) {
+                const current = normalized[targetIndex]
+                normalized[targetIndex] = normalized[neighbourIndex]
+                normalized[neighbourIndex] = current
+            }
+            for (const [index, category] of normalized.entries()) {
+                if (category.order !== index)
+                    await transaction.newsCategory.update({ where: { id: category.id }, data: { order: index } })
+            }
+            return transaction.newsCategory.findMany({ orderBy: [{ order: 'asc' }, { id: 'asc' }] })
+        })
+        const withCounts = await this.attachNewsCounts(categories)
+        return { items: withCounts }
     }
 
     async deleteCategory(id: number): Promise<AdminNewsCategoryDto> {
@@ -475,6 +548,41 @@ export class NewsService {
         }
 
         throw error
+    }
+
+    private isUniqueViolation(error: unknown): boolean {
+        return error instanceof PrismaClientKnownRequestError && error.code === 'P2002'
+    }
+
+    private generatedSlug(value: string, fallback: string): string {
+        try {
+            return slugCandidate(value)
+        } catch {
+            throw new BadRequestException(
+                new ErrorDto(
+                    ErrorCodeEnum.INVALID_QUERY_STRING,
+                    'Bad Request',
+                    400,
+                    `Не удалось создать slug из ${fallback === 'news' ? 'заголовка' : 'названия'}`
+                )
+            )
+        }
+    }
+
+    private manualSlugOrThrow(value?: string | null): string | undefined {
+        const raw = value?.trim()
+        if (!raw) return undefined
+        const normalized = normalizeSlug(raw)
+        if (!normalized) {
+            throw new BadRequestException(
+                new ErrorDto(ErrorCodeEnum.INVALID_QUERY_STRING, 'Bad Request', 400, 'Некорректный slug')
+            )
+        }
+        return normalized
+    }
+
+    private withSuffix(base: string, attempt: number): string {
+        return attempt === 0 ? base : `${base}-${attempt + 1}`
     }
 
     private toPaginationMeta(page: number, limit: number, total: number): NewsPaginationMetaDto {

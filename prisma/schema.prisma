@@ -5,7 +5,6 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
 }
 
 generator nestjsDto {
@@ -25,6 +24,7 @@ generator nestjsDto {
   fileNamingStyle                 = "camel"
   noDependencies                  = "false"
   outputType                      = "class"
+  prismaClientImportPath          = "@prisma/client"
   definiteAssignmentAssertion     = "false"
   requiredResponseApiProperty     = "true"
   prettier                        = "true"

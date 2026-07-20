@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger'
+
 import { HOME_SECTION_KEYS } from '../site-settings.constants'
 
 export class PublicSiteSettingsResponseDto {

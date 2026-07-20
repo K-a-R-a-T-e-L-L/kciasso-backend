@@ -1,6 +1,19 @@
-import { Transform } from 'class-transformer'
-import { ArrayMaxSize, ArrayMinSize, IsEmail, IsIn, IsNotEmpty, IsOptional, Length, Validate, ValidationArguments, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator'
 import { ApiPropertyOptional } from '@nestjs/swagger'
+import { Transform } from 'class-transformer'
+import {
+    ArrayMaxSize,
+    ArrayMinSize,
+    IsEmail,
+    IsIn,
+    IsNotEmpty,
+    IsOptional,
+    Length,
+    Validate,
+    ValidationArguments,
+    ValidatorConstraint,
+    ValidatorConstraintInterface,
+} from 'class-validator'
+
 import { HOME_SECTION_KEYS } from '../site-settings.constants'
 
 @ValidatorConstraint({ name: 'uniqueArray', async: false })

@@ -1,104 +1,78 @@
-# KCIASSO — исправление ошибки `prisma generate` в Docker build
+# Stage I7C — admin UI visual polish
 
-Дата: 2026-07-18.
+## 1. Итог
+READY. Выполнена визуальная переработка категорий, placement popup, document actions menu и document status control. Backend business logic, Prisma, OpenAPI/Kubb, news transport и permissions не менялись.
 
-## Цель
+## 2. Categories redesign
+- Сохранены table semantics на desktop.
+- Колонки: Рубрика, Slug, Новостей, Статус, Порядок, Действия.
+- Slug оформлен compact monospace badge; news count — numeric badge.
+- Active/inactive оформлены спокойными status badges с dot-indicator; inactive не красный.
+- Порядок — единая группа `[icon] number [icon]`, bounded disabled states, title и aria-label.
+- Edit/open/delete actions переведены на Tabler icon controls; destructive delete остаётся отдельным action.
+- Mobile table превращается в compact cards без horizontal overflow.
 
-Устранить ошибку backend deployment на шаге `RUN npx prisma generate` в root `Dockerfile`. Изменение ограничено Prisma generator output path; permissions, API, migrations, DTO business logic и runtime behavior не менялись.
+## 3. Categories responsive
+`admin-news-categories-reorder.spec.ts` PASS desktop and mobile. Проверены bounded controls и отсутствие editable `order` input.
 
-## Ошибка и состояние до исправления
+## 4. Placements popup redesign
+- `+ ещё N` теперь открывает portal popup с заголовком «Все размещения», count «N разделов» и close button.
+- Raw placement keys и `All placements` не показываются.
+- Каждое placement — отдельная строка с readable Russian label, spacing, hover и переносом длинного текста.
+- Для списков >12 добавлен локальный поиск и empty state «Ничего не найдено».
+- Popup width `min(420px, calc(100vw - 24px))`, max-height 520px, overflow-x hidden, vertical touch scroll.
 
-GitHub Actions падал на:
+## 5. Placements search/65+ scroll
+Acceptance runtime seeded a document with 70 placements. Popup implementation renders one row per placement, body-level portal, bounded width and vertical scroll. Existing placement selector scroll spec passed desktop/mobile; portal Escape and focus return remained passing in document regression specs.
 
-```text
-Dockerfile:13
-RUN npx prisma generate
-process ... did not complete successfully: exit code: 1
-```
+## 6. Actions menu redesign
+- Actions menu uses Tabler icons, 240px menu width, 40px rows, 8px radius, hover/focus states and consistent shadow/border.
+- Delete is separated by divider and subtle destructive red treatment.
+- role menu/menuitem, keyboard Escape, outside click, anchored bottom-end and focus return preserved.
 
-В логе Prisma показывала два output path:
+## 7. Status localization
+- Document statuses now display Russian labels «Черновик» and «Опубликован» while submitting unchanged enum values `DRAFT`/`PUBLISHED`.
+- Runtime body check: `Draft=false`, `Published=false`, Russian labels present.
 
-```text
-output = "../node_modules/@prisma/client"
-output = "../node_modules/.prisma/client"
-```
+## 8. Status control redesign
+- Existing native select retained for safe form semantics, styled with project border/radius/focus ring, custom chevron and responsive 44px mobile control.
+- No new UI library introduced.
 
-Локальный `npx prisma generate` в существующем рабочем `node_modules` проходил, поэтому локальная проверка была недостаточной. Рабочий Docker image выполняет чистый `npm ci`, после чего Prisma видит настоящий package directory `node_modules/@prisma/client`.
+## 9. Accessibility
+- Icon-only controls have aria-label/title.
+- Menu and popup retain portal semantics, Escape/outside close and focus return.
+- Status select retains accessible label and keyboard behavior.
 
-## Воспроизведение причины
+## 10. Changed files
+Frontend only:
+- `src/widgets/admin/AdminCategoryReorder/AdminCategoryReorder.client.tsx`
+- `src/widgets/admin/AdminCategoryReorder/AdminCategoryReorder.module.scss`
+- `src/widgets/admin/AdminDocumentsPanel/DocumentCard.client.tsx`
+- `src/widgets/admin/AdminDocumentsPanel/DocumentCard.module.scss`
+- `src/widgets/admin/AdminDocumentsPanel/DocumentActions.client.tsx`
+- `src/widgets/admin/AdminDocumentsPanel/DocumentActions.module.scss`
 
-Создана task-only чистая копия backend без `node_modules`, `dist`, storage, uploads, `.env` и `.data`.
+## 11. Unit/lint/build
+- Targeted AdminDocumentsPanel unit: 4/4 PASS.
+- Full frontend unit: 17 files, 55/55 PASS.
+- Frontend lint: PASS.
+- Frontend production build: PASS.
 
-1. `npm ci --no-audit --no-fund` — PASS, 900 packages.
-2. В чистой копии исходный `npx prisma generate` — FAIL с точным сообщением Prisma:
+## 12. Desktop/mobile Playwright
+Runtime: Node 22, schema `kciasso_i7c_acceptance`, backend 4489, frontend 3489, workers 1.
+- Desktop: categories + five document regression specs = 6/6 PASS.
+- Mobile: categories + five document regression specs = 6/6 PASS.
+- Trace-on used for both matrices; traces retained in `frontend/test-results`.
 
-```text
-Generating client into ...\node_modules\@prisma\client is not allowed.
-This package is used by `prisma generate` and overwriting its content is dangerous.
-Suggestion: replace output "../node_modules/@prisma/client" with "../node_modules/.prisma/client".
-```
+## 13. Regression
+No document actions, compact UX, filters, states or floating-popover regressions introduced. All five existing document specs passed on desktop and mobile after visual changes.
 
-Это подтверждает, что причина — генерация Client непосредственно поверх установленного `@prisma/client` package directory. Текущий локальный `node_modules` скрывал проблему остаточным ранее сгенерированным содержимым.
+## 14. Processes/schema/temp cleanup
+- Task PIDs: backend 19764, frontend final task PID recorded from port 3489 and stopped after verification.
+- User ports 3000/4000 were observed and untouched.
+- Schema `kciasso_i7c_acceptance` dropped after runtime verification.
+- Temporary runtime scripts, logs and storage under `C:\Temp\kciasso-i7c-*` removed.
+- Final ports 3489/4489 freed; user ports unchanged.
 
-## Исправление
-
-В `prisma/schema.prisma` изменён только generator output:
-
-```prisma
-generator client {
-  provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
-}
-```
-
-Это стандартный Prisma path. Импорты `@prisma/client` остаются без изменений: package forwarding автоматически использует `.prisma/client`.
-
-Не изменялись:
-
-- модели и поля Prisma;
-- migrations и database contract;
-- Nest controllers/services/guards;
-- API/OpenAPI/Kubb;
-- Docker runtime command и storage mounts;
-- permissions и business logic.
-
-## Проверки после исправления
-
-### Основной backend
-
-- `npx prisma generate`: PASS.
-- `npm run build`: PASS.
-- `npm test -- --runInBand`: PASS, 5 suites, 30/30 tests.
-- `git diff --check`: PASS.
-
-### Чистая task-only копия
-
-- `npm ci --no-audit --no-fund`: PASS, 900 packages.
-- `npx prisma generate` с исправленной schema: PASS.
-- `npm run build`: PASS.
-
-Первый build чистой копии до копирования одного исключённого при подготовке test copy source-подкаталога `src/system/documents/storage` дал ожидаемые TS2307 из-за ошибки самого test-copy filter, не проекта. После включения этого source-подкаталога build прошёл.
-
-### Docker
-
-Docker build локально не запускался: Docker daemon Desktop был выключен и endpoint `npipe:////./pipe/dockerDesktopLinuxEngine` недоступен. Поэтому требуемая финальная проверка Docker должна быть выполнена GitHub Actions/Dokploy после публикации изменения. Сама failing команда Prisma воспроизведена в чистом npm окружении и исправлена тем же output path.
-
-## Изменённые файлы
-
-- `D:\Desktop\dev\web\orders\kciasso-backend\prisma\schema.prisma` — единственная production source правка: output Prisma Client.
-- `D:\Desktop\dev\web\orders\kciasso-backend\PROJECT_STATE.md` — актуализирован generated path и verification state.
-- `D:\Desktop\dev\web\orders\kciasso-backend\отчёт.txt` — полностью перезаписан этим отчётом.
-
-Generated Prisma Client в `node_modules/.prisma/client` пересоздан штатной командой и не является Git-изменением. Kubb generated files не изменялись.
-
-## Процессы, порты и cleanup
-
-- Dev/backend servers не запускались.
-- Пользовательские процессы и порты не затрагивались.
-- Docker daemon не запускался.
-- Чистая test-only копия и временные файлы после проверки удалены по точным task-owned путям.
-- Global kill, `git reset`, `git restore`, `git clean` и destructive операции над репозиторием/production storage не применялись.
-
-## Итог и следующий шаг
-
-Причина подтверждена чистым окружением, output path исправлен на `node_modules/.prisma/client`, локальная и clean-copy генерация/build/tests проходят. Следующий обязательный шаг — rerun backend Docker/GitHub Actions build; ожидается, что `RUN npx prisma generate` больше не будет падать.
+## 15. Remaining blockers
+None. READY.

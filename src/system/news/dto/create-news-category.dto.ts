@@ -3,10 +3,11 @@ import { Type } from 'class-transformer'
 import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator'
 
 export class CreateNewsCategoryDto {
-    @ApiProperty()
+    @ApiPropertyOptional({ description: 'Оставьте пустым для автоматической генерации из названия' })
+    @IsOptional()
     @IsString()
     @MaxLength(255)
-    slug: string
+    slug?: string
 
     @ApiProperty()
     @IsString()
@@ -23,7 +24,7 @@ export class CreateNewsCategoryDto {
     @IsOptional()
     @IsInt()
     @Min(0)
-    order?: number = 0
+    order?: number
 
     @ApiPropertyOptional({ default: true })
     @IsOptional()
