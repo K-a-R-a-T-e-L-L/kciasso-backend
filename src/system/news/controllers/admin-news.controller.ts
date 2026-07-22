@@ -12,6 +12,7 @@ import { CreateNewsDto } from '../dto/create-news.dto'
 import { MoveNewsCategoryDto } from '../dto/move-news-category.dto'
 import { NewsCategoryMoveResponseDto } from '../dto/news-category-move-response.dto'
 import { PaginatedAdminNewsDto } from '../dto/paginated-admin-news.dto'
+import { PublicationCommandDto } from '../dto/publication-command.dto'
 import { UpdateNewsCategoryDto } from '../dto/update-news-category.dto'
 import { UpdateNewsDto } from '../dto/update-news.dto'
 import { NewsService } from '../services/news.service'
@@ -59,6 +60,13 @@ export class AdminNewsController {
     @ApiResponse({ status: 404, type: ErrorDto })
     async updateNews(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateNewsDto) {
         return this.newsService.updateNews(id, dto)
+    }
+
+    @Post('news/:id/publication')
+    @RequireAdminCapability('news')
+    @ApiOperation({ summary: 'Apply an idempotent news publication command' })
+    async publication(@Param('id', ParseIntPipe) id: number, @Body() dto: PublicationCommandDto) {
+        return this.newsService.applyPublicationCommand(id, dto)
     }
 
     @Delete('news/:id')

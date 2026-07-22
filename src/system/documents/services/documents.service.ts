@@ -21,6 +21,7 @@ import { getAppConfig } from '../../../config/app.config'
 import { PrismaService } from '../../../prisma/prisma.service'
 import { DOCUMENT_SECTIONS } from '../documents.constants'
 import { CreateDocumentDto } from '../dto/create-document.dto'
+import { DocumentPlacementPublicationDto } from '../dto/document-placement-publication.dto'
 import { DocumentQueryDto, DocumentSortBy, DocumentSortDirection } from '../dto/document-query.dto'
 import { DocumentVersionDto } from '../dto/document-version.dto'
 import { DocumentDto } from '../dto/document.dto'
@@ -60,6 +61,7 @@ export class DocumentsService {
     private readonly maxFileSizeBytes: number
     private readonly placementService: DocumentPlacementService
     private readonly accessPolicy: DocumentAccessPolicy
+    private createDocumentMutex: Promise<void> = Promise.resolve()
 
     constructor(
         private readonly prisma: PrismaService,
@@ -74,13 +76,46 @@ export class DocumentsService {
     }
 
     async createDocument(dto: CreateDocumentDto, file: UploadedFile | undefined, actor: User): Promise<DocumentDto> {
+        const previous = this.createDocumentMutex
+        let release!: () => void
+        this.createDocumentMutex = new Promise<void>(resolve => {
+            release = resolve
+        })
+        await previous
+        try {
+            return await this.createDocumentUnlocked(dto, file, actor)
+        } finally {
+            release()
+        }
+    }
+
+    private async createDocumentUnlocked(
+        dto: CreateDocumentDto,
+        file: UploadedFile | undefined,
+        actor: User
+    ): Promise<DocumentDto> {
         const sections = this.placementService.validatePlacementKeys(dto.placementKeys)
-        sections.forEach(section => this.accessPolicy.assertPlacementAccess(actor, section.key))
+        try {
+            sections.forEach(section => this.accessPolicy.assertPlacementAccess(actor, section.key))
+        } catch (error) {
+            await this.removeTempFile(file?.path)
+            throw error
+        }
         const prepared = await this.prepareFile(file)
-        const storageKey = this.createStorageKey(prepared.extension)
+        const storedFileModel = (this.prisma as PrismaService & { storedFile?: typeof this.prisma.storedFile })
+            .storedFile
+        const existingBlob = storedFileModel
+            ? await storedFileModel.findUnique({ where: { sha256: prepared.sha256 } })
+            : null
+        const existingPhysical = existingBlob ? await this.storage.exists(existingBlob.storage_key) : false
+        const reuseBlob = existingBlob && existingPhysical ? existingBlob : null
+        if (existingBlob && !existingPhysical && storedFileModel)
+            await storedFileModel.delete({ where: { id: existingBlob.id } }).catch(() => undefined)
+        const storageKey = reuseBlob?.storage_key ?? this.createStorageKey(prepared.extension)
 
         try {
-            await this.storage.moveTempFile(file!.path, storageKey)
+            if (!reuseBlob) await this.storage.moveTempFile(file!.path, storageKey)
+            else await this.removeTempFile(file?.path)
         } catch {
             await this.removeTempFile(file?.path)
             throw new BadRequestException(
@@ -108,6 +143,24 @@ export class DocumentsService {
                     },
                 })
                 await this.placementService.createInitialPlacements(transaction, created.id, sections)
+                const transactionStoredFile = (
+                    transaction as Prisma.TransactionClient & { storedFile?: typeof transaction.storedFile }
+                ).storedFile
+                const storedFileId =
+                    reuseBlob?.id ??
+                    (transactionStoredFile
+                        ? (
+                              await transactionStoredFile.create({
+                                  data: {
+                                      sha256: prepared.sha256,
+                                      storage_key: storageKey,
+                                      extension: prepared.extension,
+                                      mime_type: prepared.mimeType,
+                                      size_bytes: prepared.sizeBytes,
+                                  },
+                              })
+                          ).id
+                        : undefined)
                 const version = await transaction.documentVersion.create({
                     data: {
                         document_id: created.id,
@@ -118,6 +171,7 @@ export class DocumentsService {
                         mime_type: prepared.mimeType,
                         size_bytes: prepared.sizeBytes,
                         sha256: prepared.sha256,
+                        ...(storedFileId ? { stored_file_id: storedFileId } : {}),
                         created_by_id: actor.id,
                     },
                 })
@@ -133,7 +187,7 @@ export class DocumentsService {
 
             return this.mapForActor(document, actor)
         } catch (error) {
-            await this.storage.delete(storageKey)
+            if (!reuseBlob) await this.storage.delete(storageKey)
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
                 throw new ConflictException(
                     new ErrorDto(
@@ -149,6 +203,10 @@ export class DocumentsService {
     }
 
     async createVersion(documentId: number, file: UploadedFile | undefined, actor: User): Promise<DocumentDto> {
+        if (!actor.is_super_admin) {
+            await this.removeTempFile(file?.path)
+            throw new ForbiddenException('Only SUPER_ADMIN can replace a shared document version')
+        }
         const prepared = await this.prepareFile(file)
         const existing = await this.findDocumentOrThrow(documentId)
         this.accessPolicy.assertCanManage(actor, existing.placements)
@@ -167,9 +225,19 @@ export class DocumentsService {
             )
         }
 
-        const storageKey = this.createStorageKey(prepared.extension)
+        const storedFileModel = (this.prisma as PrismaService & { storedFile?: typeof this.prisma.storedFile })
+            .storedFile
+        const existingBlob = storedFileModel
+            ? await storedFileModel.findUnique({ where: { sha256: prepared.sha256 } })
+            : null
+        const existingPhysical = existingBlob ? await this.storage.exists(existingBlob.storage_key) : false
+        const reuseBlob = existingBlob && existingPhysical ? existingBlob : null
+        if (existingBlob && !existingPhysical && storedFileModel)
+            await storedFileModel.delete({ where: { id: existingBlob.id } }).catch(() => undefined)
+        const storageKey = reuseBlob?.storage_key ?? this.createStorageKey(prepared.extension)
         try {
-            await this.storage.moveTempFile(file!.path, storageKey)
+            if (!reuseBlob) await this.storage.moveTempFile(file!.path, storageKey)
+            else await this.removeTempFile(file?.path)
         } catch {
             await this.removeTempFile(file?.path)
             throw new BadRequestException(
@@ -188,6 +256,24 @@ export class DocumentsService {
                     where: { document_id: documentId },
                     _max: { version_number: true },
                 })
+                const transactionStoredFile = (
+                    transaction as Prisma.TransactionClient & { storedFile?: typeof transaction.storedFile }
+                ).storedFile
+                const storedFileId =
+                    reuseBlob?.id ??
+                    (transactionStoredFile
+                        ? (
+                              await transactionStoredFile.create({
+                                  data: {
+                                      sha256: prepared.sha256,
+                                      storage_key: storageKey,
+                                      extension: prepared.extension,
+                                      mime_type: prepared.mimeType,
+                                      size_bytes: prepared.sizeBytes,
+                                  },
+                              })
+                          ).id
+                        : undefined)
                 const version = await transaction.documentVersion.create({
                     data: {
                         document_id: documentId,
@@ -198,6 +284,7 @@ export class DocumentsService {
                         mime_type: prepared.mimeType,
                         size_bytes: prepared.sizeBytes,
                         sha256: prepared.sha256,
+                        ...(storedFileId ? { stored_file_id: storedFileId } : {}),
                         created_by_id: actor.id,
                     },
                 })
@@ -212,7 +299,7 @@ export class DocumentsService {
             })
             return this.mapForActor(result, actor)
         } catch (error) {
-            await this.storage.delete(storageKey)
+            if (!reuseBlob) await this.storage.delete(storageKey)
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
                 throw new ConflictException(
                     new ErrorDto(
@@ -345,6 +432,7 @@ export class DocumentsService {
     }
 
     async updateStatus(id: number, dto: UpdateDocumentStatusDto, actor: User): Promise<DocumentDto> {
+        if (!actor.is_super_admin) throw new ForbiddenException('Only SUPER_ADMIN can change global document status')
         const existing = await this.findDocumentOrThrow(id)
         this.accessPolicy.assertCanManage(actor, existing.placements)
         if (dto.status !== 'DRAFT' && dto.status !== 'PUBLISHED') {
@@ -379,6 +467,8 @@ export class DocumentsService {
     }
 
     async makeCurrent(documentId: number, versionId: number, actor: User): Promise<DocumentDto> {
+        if (!actor.is_super_admin)
+            throw new ForbiddenException('Only SUPER_ADMIN can replace a shared document version')
         const existingDocument = await this.findDocumentOrThrow(documentId)
         this.accessPolicy.assertCanManage(actor, existingDocument.placements)
         const version = await this.prisma.documentVersion.findFirst({
@@ -415,9 +505,14 @@ export class DocumentsService {
 
     async updatePlacements(id: number, dto: UpdateDocumentPlacementsDto, actor: User): Promise<DocumentDto> {
         const document = await this.findDocumentOrThrow(id)
-        this.accessPolicy.assertCanManage(actor, document.placements)
         dto.placementKeys.forEach(key => this.accessPolicy.assertPlacementAccess(actor, key))
-        await this.placementService.replacePlacements(id, dto.placementKeys)
+        const hiddenKeys = actor.is_super_admin
+            ? []
+            : document.placements
+                  .filter(item => !this.accessPolicy.canAccessPlacement(actor, item.section_key))
+                  .map(item => item.section_key)
+        const nextKeys = [...new Set([...hiddenKeys, ...dto.placementKeys])]
+        await this.placementService.replacePlacements(id, nextKeys)
         return this.mapForActor(await this.findDocumentOrThrow(document.id), actor)
     }
 
@@ -469,8 +564,21 @@ export class DocumentsService {
         const section = this.placementService.getSectionOrThrow(sectionKey)
         const documents = await this.prisma.document.findMany({
             where: {
-                placements: { some: { section_key: section.key } },
-                status: DocumentStatus.PUBLISHED,
+                placements: {
+                    some: {
+                        section_key: section.key,
+                        AND: [
+                            {
+                                OR: [
+                                    { publication_status: { in: ['PUBLISHED', 'SCHEDULED'] } },
+                                    { publication_status: 'DRAFT', document: { status: DocumentStatus.PUBLISHED } },
+                                ],
+                            },
+                            { OR: [{ publish_from: null }, { publish_from: { lte: new Date() } }] },
+                            { OR: [{ publish_until: null }, { publish_until: { gt: new Date() } }] },
+                        ],
+                    },
+                },
                 deleted_at: null,
                 current_version: { isNot: null },
             },
@@ -495,7 +603,24 @@ export class DocumentsService {
 
     async getPublicDocumentFile(documentId: number) {
         const document = await this.prisma.document.findFirst({
-            where: { id: documentId, deleted_at: null, status: DocumentStatus.PUBLISHED },
+            where: {
+                id: documentId,
+                deleted_at: null,
+                placements: {
+                    some: {
+                        AND: [
+                            {
+                                OR: [
+                                    { publication_status: { in: ['PUBLISHED', 'SCHEDULED'] } },
+                                    { publication_status: 'DRAFT', document: { status: DocumentStatus.PUBLISHED } },
+                                ],
+                            },
+                            { OR: [{ publish_from: null }, { publish_from: { lte: new Date() } }] },
+                            { OR: [{ publish_until: null }, { publish_until: { gt: new Date() } }] },
+                        ],
+                    },
+                },
+            },
             include: { current_version: true },
         })
         const version = document?.current_version
@@ -519,7 +644,50 @@ export class DocumentsService {
         }
     }
 
+    async applyPlacementPublication(
+        documentId: number,
+        sectionKey: string,
+        dto: DocumentPlacementPublicationDto,
+        actor: User
+    ) {
+        const document = await this.findDocumentOrThrow(documentId)
+        const placement = document.placements.find(item => item.section_key === sectionKey)
+        if (!placement)
+            throw new NotFoundException(
+                new ErrorDto(ErrorCodeEnum.DOCUMENT_SECTION_NOT_FOUND, 'Not Found', 404, 'Document placement not found')
+            )
+        this.accessPolicy.assertPlacementAccess(actor, sectionKey)
+        const now = new Date()
+        const from = dto.publishFrom ? new Date(dto.publishFrom) : now
+        const until = dto.publishUntil ? new Date(dto.publishUntil) : null
+        const display = dto.displayPublishedAt ? new Date(dto.displayPublishedAt) : from
+        if (until && until <= from) throw new BadRequestException('publishUntil must be after publishFrom')
+        if (dto.command === 'schedule' && from <= now)
+            throw new BadRequestException('publishFrom must be in the future')
+        if (
+            dto.command !== 'draft' &&
+            (!document.current_version || !(await this.storage.exists(document.current_version.storage_key)))
+        )
+            throw new BadRequestException('A current physical version is required before publishing')
+        const data =
+            dto.command === 'draft'
+                ? { publication_status: 'DRAFT' as const, publish_from: null, publish_until: null }
+                : dto.command === 'schedule'
+                  ? { publication_status: 'SCHEDULED' as const, publish_from: from, publish_until: until }
+                  : { publication_status: 'PUBLISHED' as const, publish_from: now, publish_until: until }
+        await this.prisma.documentPlacement.update({
+            where: { id: placement.id },
+            data: {
+                ...data,
+                display_published_at: dto.command === 'draft' ? placement.display_published_at : display,
+                publication_revision: { increment: 1 },
+            },
+        })
+        return this.mapForActor(await this.findDocumentOrThrow(documentId), actor)
+    }
+
     async deleteDocument(id: number, actor: User): Promise<void> {
+        if (!actor.is_super_admin) throw new ForbiddenException('Only SUPER_ADMIN can delete a document globally')
         const authorizedDocument = await this.findDocumentOrThrow(id)
         this.accessPolicy.assertCanManage(actor, authorizedDocument.placements)
         const document = await this.prisma.document.findFirst({
@@ -532,9 +700,18 @@ export class DocumentsService {
             )
         }
         const quarantined: Array<{ key: string; storageKey: string }> = []
+        const storedFileIds = document.versions
+            .map(version => version.stored_file_id)
+            .filter((id): id is number => id !== null)
         try {
             for (const version of document.versions) {
                 if (!(await this.storage.exists(version.storage_key))) continue
+                if (version.stored_file_id) {
+                    const refs = await this.prisma.documentVersion.count({
+                        where: { stored_file_id: version.stored_file_id },
+                    })
+                    if (refs > 1) continue
+                }
                 quarantined.push({
                     key: await this.storage.quarantine(version.storage_key),
                     storageKey: version.storage_key,
@@ -553,6 +730,10 @@ export class DocumentsService {
             throw error
         }
         for (const item of quarantined) await this.storage.purgeQuarantine(item.key).catch(() => undefined)
+        for (const storedFileId of storedFileIds) {
+            const refs = await this.prisma.documentVersion.count({ where: { stored_file_id: storedFileId } })
+            if (refs === 0) await this.prisma.storedFile.delete({ where: { id: storedFileId } }).catch(() => undefined)
+        }
     }
 
     private async findDocumentOrThrow(id: number): Promise<DocumentWithRelations> {

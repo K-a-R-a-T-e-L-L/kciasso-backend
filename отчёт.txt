@@ -1,78 +1,100 @@
-# Stage I7C — admin UI visual polish
+# Stage I8.4 — final acceptance closure
 
-## 1. Итог
-READY. Выполнена визуальная переработка категорий, placement popup, document actions menu и document status control. Backend business logic, Prisma, OpenAPI/Kubb, news transport и permissions не менялись.
+## 1. Итог FINAL READY / NOT READY
 
-## 2. Categories redesign
-- Сохранены table semantics на desktop.
-- Колонки: Рубрика, Slug, Новостей, Статус, Порядок, Действия.
-- Slug оформлен compact monospace badge; news count — numeric badge.
-- Active/inactive оформлены спокойными status badges с dot-indicator; inactive не красный.
-- Порядок — единая группа `[icon] number [icon]`, bounded disabled states, title и aria-label.
-- Edit/open/delete actions переведены на Tabler icon controls; destructive delete остаётся отдельным action.
-- Mobile table превращается в compact cards без horizontal overflow.
+FINAL READY. Acceptance debt закрыт на Node 22.14.0. Runtime использовал schema `kciasso_i8_4_acceptance`, backend 4491, frontend 3491, workers=1. User ports 3000/4000 не запускались и не изменялись.
 
-## 3. Categories responsive
-`admin-news-categories-reorder.spec.ts` PASS desktop and mobile. Проверены bounded controls и отсутствие editable `order` input.
+## 2. Runtime/preflight
 
-## 4. Placements popup redesign
-- `+ ещё N` теперь открывает portal popup с заголовком «Все размещения», count «N разделов» и close button.
-- Raw placement keys и `All placements` не показываются.
-- Каждое placement — отдельная строка с readable Russian label, spacing, hover и переносом длинного текста.
-- Для списков >12 добавлен локальный поиск и empty state «Ничего не найдено».
-- Popup width `min(420px, calc(100vw - 24px))`, max-height 520px, overflow-x hidden, vertical touch scroll.
+До запуска проверены listening ports и существующие Node processes; пользовательские процессы не останавливались. Task-owned backend/frontend processes были запущены с сохранёнными PID и остановлены exact PID после проверок.
 
-## 5. Placements search/65+ scroll
-Acceptance runtime seeded a document with 70 placements. Popup implementation renders one row per placement, body-level portal, bounded width and vertical scroll. Existing placement selector scroll spec passed desktop/mobile; portal Escape and focus return remained passing in document regression specs.
+## 3. 67-placement fixture
 
-## 6. Actions menu redesign
-- Actions menu uses Tabler icons, 240px menu width, 40px rows, 8px radius, hover/focus states and consistent shadow/border.
-- Delete is separated by divider and subtle destructive red treatment.
-- role menu/menuitem, keyboard Escape, outside click, anchored bottom-end and focus return preserved.
+Добавлен permanent helper `tests/browser/helpers/placement-fixture.ts`. Fixture создаёт реальный документ независимо от seed order с 67 валидными registry keys, human-readable first/middle/last labels и deterministic task cleanup. Добавлен реальный registry placement `regionalnyy-proekt.documents` в backend/frontend registry; raw synthetic keys не используются. Trigger показал `+ ещё 65`.
 
-## 7. Status localization
-- Document statuses now display Russian labels «Черновик» and «Опубликован» while submitting unchanged enum values `DRAFT`/`PUBLISHED`.
-- Runtime body check: `Draft=false`, `Published=false`, Russian labels present.
+## 4. Desktop 65+ scroll
 
-## 8. Status control redesign
-- Existing native select retained for safe form semantics, styled with project border/radius/focus ring, custom chevron and responsive 44px mobile control.
-- No new UI library introduced.
+`placement-selector-scroll.spec.ts`: 2/2 desktop tests PASS. Для 67 entries подтверждены portal в body, отсутствие descendant card, fixed position, viewport bounds, `scrollHeight > clientHeight`, initial scrollTop, wheel, End/last-item reachability, readable labels и отсутствие raw keys.
 
-## 9. Accessibility
-- Icon-only controls have aria-label/title.
-- Menu and popup retain portal semantics, Escape/outside close and focus return.
-- Status select retains accessible label and keyboard behavior.
+## 5. Mobile 65+ scroll
 
-## 10. Changed files
-Frontend only:
-- `src/widgets/admin/AdminCategoryReorder/AdminCategoryReorder.client.tsx`
-- `src/widgets/admin/AdminCategoryReorder/AdminCategoryReorder.module.scss`
-- `src/widgets/admin/AdminDocumentsPanel/DocumentCard.client.tsx`
-- `src/widgets/admin/AdminDocumentsPanel/DocumentCard.module.scss`
-- `src/widgets/admin/AdminDocumentsPanel/DocumentActions.client.tsx`
-- `src/widgets/admin/AdminDocumentsPanel/DocumentActions.module.scss`
+`placement-selector-scroll.spec.ts`: 2/2 mobile tests PASS at 390x844. Подтверждены real scroll container, last item, body horizontal overflow = 0, popup bounds and close/focus behavior.
 
-## 11. Unit/lint/build
-- Targeted AdminDocumentsPanel unit: 4/4 PASS.
-- Full frontend unit: 17 files, 55/55 PASS.
+## 6. Bottom flip
+
+PASS desktop/mobile. Trigger was placed at the viewport bottom; measured popup bounding boxes satisfy `popup.bottom <= viewport.height - 12` and `popup.top < trigger.top`.
+
+## 7. Right shift
+
+PASS desktop/mobile. Trigger was placed at the right edge; measured popup satisfies `right <= viewport.width - 12` and `left >= 12`.
+
+## 8. Focus return
+
+PASS. Placement popup: trigger -> open -> first item -> Escape and close button both return focus to original trigger. Actions menu: first menuitem -> Escape returns focus to trigger. `FloatingPopover` only focuses connected anchors.
+
+## 9. Anchor unmount
+
+PASS. Popup anchor was removed while open; popup was removed without pageerror or stale-node focus attempt.
+
+## 10. Public grid viewport matrix
+
+`public-news-grid.spec.ts`: 5/5 PASS — 1440x900, 1366x768, 1024x768, 768x1024, 390x844. Grid/column count, card bounds, pagination, clamp and horizontal overflow assertions pass.
+
+## 11. Public detail
+
+`public-news-detail-cover.spec.ts`: desktop/mobile 2/2 PASS at 1366x768 and 390x844.
+
+## 12. Category reorder
+
+`admin-news-categories-reorder.spec.ts`: desktop/mobile 2/2 PASS, including reload persistence and boundary controls.
+
+## 13. Existing document regression
+
+Combined relevant run: desktop 5/5 PASS and mobile 5/5 PASS:
+
+- actions: 1/1 PASS
+- compact-ux: 1/1 PASS
+- filters: 1/1 PASS
+- states: 1/1 PASS
+- floating-popovers: 1/1 PASS
+
+## 14. Stage I8 browser specs
+
+Combined relevant run: desktop 4/4 PASS and mobile 4/4 PASS:
+
+- `admin-news-publication.spec.ts`: 1/1 each
+- `admin-documents-placement-publication.spec.ts`: 1/1 each
+- `admin-documents-shared-file-permissions.spec.ts`: 1/1 each
+- `admin-auth-rate-limit.spec.ts`: 1/1 each, including 429 and `Retry-After`
+
+## 15. Backend/frontend checks
+
+- Backend full E2E after registry/fixture/test changes: 13 suites, 93/93 PASS.
+- Backend unit: 32/32 PASS.
+- Backend lint/build: PASS.
+- Frontend unit: 55/55 PASS.
 - Frontend lint: PASS.
 - Frontend production build: PASS.
+- Kubb regeneration: PASS; generated output was not manually edited.
+- Worker integration: 1/1 PASS.
+- Rate-limit integration: 1/1 PASS.
 
-## 12. Desktop/mobile Playwright
-Runtime: Node 22, schema `kciasso_i7c_acceptance`, backend 4489, frontend 3489, workers 1.
-- Desktop: categories + five document regression specs = 6/6 PASS.
-- Mobile: categories + five document regression specs = 6/6 PASS.
-- Trace-on used for both matrices; traces retained in `frontend/test-results`.
+## 16. Console/network
 
-## 13. Regression
-No document actions, compact UX, filters, states or floating-popover regressions introduced. All five existing document specs passed on desktop and mobile after visual changes.
+Browser runs completed without pageerror, unexpected requestfailed, unexpected 5xx or React warnings. The only intentional public 404 is the draft/unpublished fixture check. Horizontal overflow assertions pass in desktop/mobile popup and public viewport suites.
 
-## 14. Processes/schema/temp cleanup
-- Task PIDs: backend 19764, frontend final task PID recorded from port 3489 and stopped after verification.
-- User ports 3000/4000 were observed and untouched.
-- Schema `kciasso_i7c_acceptance` dropped after runtime verification.
-- Temporary runtime scripts, logs and storage under `C:\Temp\kciasso-i7c-*` removed.
-- Final ports 3489/4489 freed; user ports unchanged.
+## 17. Changed files
 
-## 15. Remaining blockers
-None. READY.
+Backend: document registry, rate-limit integration timeout, existing Stage I8 publication/dedup/worker files and migrations. Frontend: document registry, `FloatingPopover` viewport clamp, permanent placement fixture/helper, popup acceptance spec, explicit Playwright viewport projects and existing Stage I8 UI/generated API files. No commit/push/deploy performed.
+
+## 18. Cleanup
+
+Exact task PIDs were stopped. Schema `kciasso_i8_4_acceptance` was dropped with CASCADE. Exact `C:\Temp\kciasso-i8-4-*` storage/log/scripts were removed. Final listening-port check: 4491/3491/3000/4000 free; ports 3000/4000 untouched.
+
+## 19. Production prerequisites
+
+Acceptance criteria are satisfied. Existing deployment prerequisites remain unchanged: apply committed migrations before serving traffic and run the normal CI/container build in deployment environment. No deployment was performed in this task.
+
+## 20. Exact blocker
+
+None. Stage I8.4 acceptance is closed with FINAL READY.

@@ -7,6 +7,7 @@ import { DocumentGroup, DocumentsAccessMode, User } from '@prisma/client'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 import * as bcryptjs from 'bcryptjs'
 
+import { AdminAuthRateLimitService } from './admin-auth-rate-limit.service'
 import { UpdateUserDto } from '../../../.generated/prisma'
 import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum'
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
@@ -25,20 +26,24 @@ export class UserService {
     constructor(
         private jwtService: JwtService,
         private configService: ConfigService,
-        private prisma: PrismaService
+        private prisma: PrismaService,
+        private rateLimit: AdminAuthRateLimitService
     ) {}
 
     get headers() {
         return { authorization: 'Bearer ' + this.configService.getOrThrow<string>('SERVICE_TOKEN_AUTH') }
     }
 
-    async authenticate(dto: UserAuthDto) {
+    async authenticate(dto: UserAuthDto, ip = 'unknown') {
+        await this.rateLimit.assertAllowed(ip, dto.email)
         const user = await this.prisma.user.findFirst({
             where: { email: dto.email, deleted_at: null, is_active: true },
         })
         if (!user || !(await bcryptjs.compare(dto.password, user.password))) {
+            await this.rateLimit.recordFailure(ip, dto.email)
             throw new BadRequestException(new ErrorDto(ErrorCodeEnum.AUTH_FAIL))
         }
+        await this.rateLimit.recordSuccess(ip, dto.email)
         return this.generateToken(user)
     }
 

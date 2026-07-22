@@ -1,5 +1,18 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common'
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    HttpException,
+    Param,
+    ParseIntPipe,
+    Patch,
+    Post,
+    Req,
+    Res,
+} from '@nestjs/common'
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { Request, Response } from 'express'
 
 import { Session, UpdateUserDto, User } from '../../../.generated/prisma'
 import { UserAuth, UserAuthType } from '../../../_helpers/decorators/auth.helpers'
@@ -20,8 +33,20 @@ export class UserController {
     constructor(private readonly userService: UserService) {}
 
     @UserDockPost('authenticate', UserAuthType.NOT_AUTH, UserAuthDto, Session)
-    async authenticate(@Body() dto: UserAuthDto) {
-        return this.userService.authenticate(dto)
+    async authenticate(
+        @Body() dto: UserAuthDto,
+        @Req() request: Request,
+        @Res({ passthrough: true }) response: Response
+    ) {
+        try {
+            return await this.userService.authenticate(dto, request.ip || 'unknown')
+        } catch (error) {
+            if (error instanceof HttpException && error.getStatus() === 429) {
+                const body = error.getResponse() as { retryAfter?: number }
+                if (body.retryAfter) response.setHeader('Retry-After', String(body.retryAfter))
+            }
+            throw error
+        }
     }
 
     @Get('')

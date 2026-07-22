@@ -143,6 +143,13 @@ export const DOCUMENT_SECTIONS: readonly DocumentSectionMetadata[] = [
         '/regionalnyy-proekt/video',
         'video'
     ),
+    section(
+        'regionalnyy-proekt.documents',
+        'regional',
+        'Regionalnyy proekt',
+        'Regionalnyy proekt documents',
+        '/regionalnyy-proekt/documents'
+    ),
     section('about.ob-uchrezhdenii', 'about', 'О центре', 'Об учреждении', '/o-centre/ob-uchrezhdenii'),
     section(
         'about.protivodeystvie-korruptsii',

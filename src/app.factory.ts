@@ -13,6 +13,8 @@ export function configureApp(app: INestApplication) {
     const configService = app.get(ConfigService)
     const appConfig = getAppConfig(configService)
 
+    app.getHttpAdapter().getInstance().set('trust proxy', configService.get<number>('ADMIN_AUTH_TRUST_PROXY_HOPS', 0))
+
     app.setGlobalPrefix('api')
     app.enableCors({
         origin: [appConfig.frontendUrl],

@@ -56,6 +56,16 @@ export class DocumentPlacementService {
     }
 
     async replacePlacements(documentId: number, placementKeys: string[]): Promise<void> {
+        if (placementKeys.length === 0) {
+            await this.prisma.$transaction(async transaction => {
+                await transaction.documentPlacement.deleteMany({ where: { document_id: documentId } })
+                await transaction.document.update({
+                    where: { id: documentId },
+                    data: { section_key: '', updated_at: new Date() },
+                })
+            })
+            return
+        }
         const sections = this.validatePlacementKeys(placementKeys)
         await this.prisma.$transaction(async transaction => {
             const current = await transaction.documentPlacement.findMany({ where: { document_id: documentId } })

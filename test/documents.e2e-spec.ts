@@ -155,7 +155,8 @@ describe('Documents hardening (e2e)', () => {
                 filename: 'v2.pdf',
                 contentType: 'application/pdf',
             })
-        expect(version.status).toBe(201)
+        // Global version replacement is SUPER_ADMIN-only under Stage I8.
+        expect(version.status).toBe(403)
 
         const deniedRequests = [
             () => request(app.getHttpServer()).post('/api/admin/documents'),

@@ -26,4 +26,9 @@ export const validationSchema = Joi.object({
     FRONTEND_URL: Joi.string().uri().required(),
     SUPER_ADMIN_EMAIL: Joi.string().email().allow('').optional(),
     SUPER_ADMIN_PASSWORD: Joi.string().min(8).allow('').optional(),
+    ADMIN_AUTH_RATE_LIMIT_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+    ADMIN_AUTH_RATE_LIMIT_WINDOW_SECONDS: Joi.number().integer().positive().default(60),
+    ADMIN_AUTH_RATE_LIMIT_MAX_ATTEMPTS: Joi.number().integer().positive().default(3),
+    ADMIN_AUTH_RATE_LIMIT_BLOCK_SECONDS: Joi.number().integer().positive().default(60),
+    ADMIN_AUTH_TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
 })

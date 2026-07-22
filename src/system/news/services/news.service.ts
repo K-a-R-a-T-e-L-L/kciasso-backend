@@ -19,6 +19,7 @@ import { NewsQueryDto } from '../dto/news-query.dto'
 import { NEWS_STATUS, NewsStatus } from '../dto/news-status.dto'
 import { PaginatedAdminNewsDto } from '../dto/paginated-admin-news.dto'
 import { PaginatedNewsDto } from '../dto/paginated-news.dto'
+import { PublicationCommandDto } from '../dto/publication-command.dto'
 import { UpdateNewsCategoryDto } from '../dto/update-news-category.dto'
 import { UpdateNewsDto } from '../dto/update-news.dto'
 import { NewsMediaService } from '../media/news-media.service'
@@ -47,7 +48,7 @@ export class NewsService {
                 include: {
                     category: true,
                 },
-                orderBy: [{ published_at: 'desc' }, { created_at: 'desc' }],
+                orderBy: [{ display_published_at: 'desc' }, { published_at: 'desc' }, { created_at: 'desc' }],
                 skip: (page - 1) * limit,
                 take: limit,
             }),
@@ -64,10 +65,16 @@ export class NewsService {
         const item = await this.prisma.news.findFirst({
             where: {
                 slug,
-                is_published: true,
-                published_at: {
-                    lte: new Date(),
-                },
+                AND: [
+                    {
+                        OR: [
+                            { publication_status: { in: ['PUBLISHED', 'SCHEDULED'] } },
+                            { publication_status: 'DRAFT', is_published: true },
+                        ],
+                    },
+                    { OR: [{ publish_from: null }, { publish_from: { lte: new Date() } }] },
+                    { OR: [{ publish_until: null }, { publish_until: { gt: new Date() } }] },
+                ],
                 deleted_at: null,
             },
             include: {
@@ -149,6 +156,15 @@ export class NewsService {
                         cover_image_url: dto.coverImageUrl?.trim() || null,
                         is_published: dto.isPublished ?? false,
                         published_at: this.resolvePublishedAt(dto.isPublished ?? false, dto.publishedAt),
+                        publication_status: dto.isPublished
+                            ? dto.publishedAt && dto.publishedAt > new Date()
+                                ? 'SCHEDULED'
+                                : 'PUBLISHED'
+                            : 'DRAFT',
+                        publish_from: dto.publishedAt ?? (dto.isPublished ? new Date() : null),
+                        publish_until: dto.publishUntil ?? null,
+                        display_published_at:
+                            dto.displayPublishedAt ?? dto.publishedAt ?? (dto.isPublished ? new Date() : null),
                         category_id: dto.categoryId ?? null,
                         author_id: authorId ?? null,
                     },
@@ -201,6 +217,8 @@ export class NewsService {
                         : shouldSetPublishedNow
                           ? { published_at: new Date() }
                           : {}),
+                    ...(dto.publishUntil !== undefined ? { publish_until: dto.publishUntil } : {}),
+                    ...(dto.displayPublishedAt !== undefined ? { display_published_at: dto.displayPublishedAt } : {}),
                 },
                 include: {
                     category: true,
@@ -245,6 +263,46 @@ export class NewsService {
 
         await this.media.deleteOwnedUrlIfUnreferenced(previous.cover_image_url)
         return this.toAdminNewsDto(item)
+    }
+
+    async applyPublicationCommand(id: number, dto: PublicationCommandDto): Promise<AdminNewsDto> {
+        const item = await this.findAdminNewsOrThrow(id)
+        const now = new Date()
+        const from = dto.publishFrom ? new Date(dto.publishFrom) : now
+        const until = dto.publishUntil ? new Date(dto.publishUntil) : null
+        const display = dto.displayPublishedAt ? new Date(dto.displayPublishedAt) : from
+        if (until && until <= from) throw new BadRequestException('publishUntil must be after publishFrom')
+        if (dto.command === 'schedule' && from <= now)
+            throw new BadRequestException('publishFrom must be in the future')
+        if (dto.command === 'publish_as_of' && !dto.displayPublishedAt)
+            throw new BadRequestException('displayPublishedAt is required')
+        const data =
+            dto.command === 'draft'
+                ? { publication_status: 'DRAFT' as const, is_published: false, publish_from: null, publish_until: null }
+                : dto.command === 'schedule'
+                  ? {
+                        publication_status: 'SCHEDULED' as const,
+                        is_published: true,
+                        publish_from: from,
+                        publish_until: until,
+                    }
+                  : {
+                        publication_status: 'PUBLISHED' as const,
+                        is_published: true,
+                        publish_from: now,
+                        publish_until: until,
+                    }
+        const updated = await this.prisma.news.update({
+            where: { id },
+            data: {
+                ...data,
+                published_at: dto.command === 'draft' ? null : from,
+                display_published_at: dto.command === 'draft' ? item.display_published_at : display,
+                publication_revision: { increment: 1 },
+            },
+            include: { category: true, author: { select: { id: true, name: true, email: true } } },
+        })
+        return this.toAdminNewsDto(updated)
     }
 
     async getAdminCategories(): Promise<AdminNewsCategoryDto[]> {
@@ -388,10 +446,16 @@ export class NewsService {
 
     private buildPublicNewsWhere(query: NewsQueryDto): Prisma.NewsWhereInput {
         return {
-            is_published: true,
-            published_at: {
-                lte: new Date(),
-            },
+            AND: [
+                {
+                    OR: [
+                        { publication_status: { in: ['PUBLISHED', 'SCHEDULED'] } },
+                        { publication_status: 'DRAFT', is_published: true },
+                    ],
+                },
+                { OR: [{ publish_from: null }, { publish_from: { lte: new Date() } }] },
+                { OR: [{ publish_until: null }, { publish_until: { gt: new Date() } }] },
+            ],
             deleted_at: null,
             ...(query.category
                 ? {
@@ -656,7 +720,7 @@ export class NewsService {
             title: item.title,
             excerpt: item.excerpt,
             coverImageUrl: item.cover_image_url,
-            publishedAt: item.published_at,
+            publishedAt: item.display_published_at ?? item.published_at,
             category: item.category ? this.toNewsCategoryDto(item.category) : null,
         }
     }
@@ -669,7 +733,7 @@ export class NewsService {
             excerpt: item.excerpt,
             content: item.content,
             coverImageUrl: item.cover_image_url,
-            publishedAt: item.published_at,
+            publishedAt: item.display_published_at ?? item.published_at,
             category: item.category ? this.toNewsCategoryDto(item.category) : null,
         }
     }
@@ -684,7 +748,12 @@ export class NewsService {
             coverImageUrl: item.cover_image_url,
             publishedAt: item.published_at,
             isPublished: item.is_published,
-            status: this.resolveAdminNewsStatus(item),
+            status:
+                item.publication_status === 'SCHEDULED'
+                    ? NEWS_STATUS.SCHEDULED
+                    : item.publication_status === 'PUBLISHED'
+                      ? NEWS_STATUS.PUBLISHED
+                      : NEWS_STATUS.DRAFT,
             category: item.category ? this.toAdminNewsCategoryDto(item.category) : null,
             author: item.author
                 ? {

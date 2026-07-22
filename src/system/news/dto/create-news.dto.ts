@@ -48,4 +48,16 @@ export class CreateNewsDto {
     @IsOptional()
     @IsDate()
     publishedAt?: Date
+
+    @ApiPropertyOptional()
+    @Type(() => Date)
+    @IsOptional()
+    @IsDate()
+    publishUntil?: Date
+
+    @ApiPropertyOptional()
+    @Type(() => Date)
+    @IsOptional()
+    @IsDate()
+    displayPublishedAt?: Date
 }

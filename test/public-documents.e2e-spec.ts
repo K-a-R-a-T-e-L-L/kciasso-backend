@@ -208,7 +208,9 @@ describe('Public published documents (e2e)', () => {
 
     it('hides unavailable documents consistently and leaves valid rows visible', async () => {
         const valid = await createDocument('public-valid-after-missing', pdfV1, 'valid.pdf', 'application/pdf')
-        const missing = await createDocument('public-missing-file', pdfV1, 'missing.pdf', 'application/pdf')
+        // Use distinct bytes: deleting one physical file must not model a shared-blob
+        // document deletion and invalidate the valid document as well.
+        const missing = await createDocument('public-missing-file', pdfV2, 'missing.pdf', 'application/pdf')
         await setStatus(valid.id, DocumentStatus.PUBLISHED)
         await setStatus(missing.id, DocumentStatus.PUBLISHED)
         const missingVersion = await prisma.document.findUniqueOrThrow({

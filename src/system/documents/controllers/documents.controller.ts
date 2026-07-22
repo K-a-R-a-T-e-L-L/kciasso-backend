@@ -25,6 +25,7 @@ import { ErrorDto } from '../../../_helpers/errors/error.dto'
 import { UserDecorator } from '../../user/decorators/user.decorator'
 import { UserGuard } from '../../user/guards/user.guard'
 import { CreateDocumentDto } from '../dto/create-document.dto'
+import { DocumentPlacementPublicationDto } from '../dto/document-placement-publication.dto'
 import { DocumentQueryDto } from '../dto/document-query.dto'
 import { DocumentVersionDto } from '../dto/document-version.dto'
 import { DocumentDto } from '../dto/document.dto'
@@ -81,6 +82,17 @@ export class DocumentsController {
     @ApiResponse({ status: 403, type: ErrorDto })
     async list(@Query() query: DocumentQueryDto, @UserDecorator() user: User) {
         return this.documentsService.getDocuments(query, user)
+    }
+
+    @Post(':id/placements/:sectionKey/publication')
+    @ApiOperation({ summary: 'Apply publication command to one document placement' })
+    async placementPublication(
+        @Param('id', ParseIntPipe) id: number,
+        @Param('sectionKey') sectionKey: string,
+        @Body() dto: DocumentPlacementPublicationDto,
+        @UserDecorator() user: User
+    ) {
+        return this.documentsService.applyPlacementPublication(id, sectionKey, dto, user)
     }
 
     @Get(':id')
