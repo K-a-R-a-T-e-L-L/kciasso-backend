@@ -75,7 +75,7 @@ describe('News media (e2e)', () => {
         ).toBe(400)
     })
 
-    it('uses unique owned keys and deletes only after the last referencing news record releases it', async () => {
+    it('deduplicates shared owned keys and deletes only after the last referencing news record releases it', async () => {
         const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
         const firstUpload = await request(app.getHttpServer())
             .post('/api/admin/news/media')
@@ -85,7 +85,7 @@ describe('News media (e2e)', () => {
             .post('/api/admin/news/media')
             .set('Authorization', `Bearer ${token}`)
             .attach('file', png, { filename: 'two.png', contentType: 'image/png' })
-        expect(firstUpload.body.key).not.toBe(secondUpload.body.key)
+        expect(firstUpload.body.key).toBe(secondUpload.body.key)
         expect((await request(app.getHttpServer()).get(firstUpload.body.url)).status).toBe(200)
 
         const create = (slug: string) =>

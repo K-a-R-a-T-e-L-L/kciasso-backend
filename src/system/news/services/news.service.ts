@@ -140,6 +140,7 @@ export class NewsService {
 
     async createNews(dto: CreateNewsDto, authorId?: number): Promise<AdminNewsDto> {
         await this.ensureCategoryExists(dto.categoryId)
+        const cover = await this.resolveCover(dto.coverMediaId, dto.coverImageUrl)
 
         const title = dto.title.trim()
         const manualSlug = this.manualSlugOrThrow(dto.slug)
@@ -153,7 +154,8 @@ export class NewsService {
                         title,
                         excerpt: dto.excerpt.trim(),
                         content: dto.content.trim(),
-                        cover_image_url: dto.coverImageUrl?.trim() || null,
+                        cover_image_url: cover.url,
+                        cover_media_id: cover.mediaId,
                         is_published: dto.isPublished ?? false,
                         published_at: this.resolvePublishedAt(dto.isPublished ?? false, dto.publishedAt),
                         publication_status: dto.isPublished
@@ -197,6 +199,10 @@ export class NewsService {
     async updateNews(id: number, dto: UpdateNewsDto): Promise<AdminNewsDto> {
         const previous = await this.findAdminNewsOrThrow(id)
         await this.ensureCategoryExists(dto.categoryId)
+        const cover =
+            dto.coverMediaId !== undefined || dto.coverImageUrl !== undefined
+                ? await this.resolveCover(dto.coverMediaId, dto.coverImageUrl)
+                : undefined
 
         const nextIsPublished = dto.isPublished
         const shouldSetPublishedNow = nextIsPublished === true && dto.publishedAt === undefined
@@ -209,7 +215,7 @@ export class NewsService {
                     ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
                     ...(dto.excerpt !== undefined ? { excerpt: dto.excerpt.trim() } : {}),
                     ...(dto.content !== undefined ? { content: dto.content.trim() } : {}),
-                    ...(dto.coverImageUrl !== undefined ? { cover_image_url: dto.coverImageUrl?.trim() || null } : {}),
+                    ...(cover !== undefined ? { cover_image_url: cover.url, cover_media_id: cover.mediaId } : {}),
                     ...(dto.categoryId !== undefined ? { category_id: dto.categoryId ?? null } : {}),
                     ...(dto.isPublished !== undefined ? { is_published: dto.isPublished } : {}),
                     ...(dto.publishedAt !== undefined
@@ -232,7 +238,7 @@ export class NewsService {
                 },
             })
 
-            if (dto.coverImageUrl !== undefined && item.cover_image_url !== previous.cover_image_url) {
+            if (cover !== undefined && item.cover_image_url !== previous.cover_image_url) {
                 await this.media.deleteOwnedUrlIfUnreferenced(previous.cover_image_url)
             }
             return this.toAdminNewsDto(item)
@@ -561,6 +567,20 @@ export class NewsService {
                 new ErrorDto(ErrorCodeEnum.ENTITY_NOT_FOUND, 'Not Found', 404, 'News category not found')
             )
         }
+    }
+
+    private async resolveCover(mediaId?: number | null, legacyUrl?: string | null) {
+        if (mediaId === undefined || mediaId === null) {
+            const url = legacyUrl?.trim() || null
+            const ownedKey = this.media.keyFromOwnedUrl(url)
+            if (!ownedKey) return { mediaId: null, url }
+            const owned = await this.prisma.newsMedia.findUnique({ where: { storage_key: ownedKey } })
+            if (!owned || owned.status !== 'READY') throw new BadRequestException('Изображение недоступно')
+            return { mediaId: owned.id, url }
+        }
+        const media = await this.prisma.newsMedia.findUnique({ where: { id: mediaId } })
+        if (!media || media.status !== 'READY') throw new BadRequestException('Изображение недоступно')
+        return { mediaId: media.id, url: `/api/public/news/media/${media.storage_key}` }
     }
 
     private async findCategoryOrThrow(id: number): Promise<NewsCategory> {

@@ -5,6 +5,7 @@ import { validationSchema } from './env.validation'
 import { PrismaModule } from './prisma/prisma.module'
 import { DocumentsModule } from './system/documents/documents.module'
 import { NewsModule } from './system/news/news.module'
+import { PagesModule } from './system/pages/pages.module'
 import { PublicationModule } from './system/publication/publication.module'
 import { SiteSettingsModule } from './system/site-settings/site-settings.module'
 import { UserModule } from './system/user/user.module'
@@ -21,6 +22,7 @@ import { UserModule } from './system/user/user.module'
         SiteSettingsModule,
         DocumentsModule,
         PublicationModule,
+        PagesModule,
     ],
     controllers: [],
     providers: [],

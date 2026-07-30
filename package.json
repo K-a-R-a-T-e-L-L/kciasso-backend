@@ -12,9 +12,9 @@
         "build": "nest build",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
         "start": "nest start",
-        "start:dev": "prisma generate && nest start --watch",
-        "start:debug": "nest start --debug --watch",
-        "start:prod": "prisma generate && node dist/main",
+        "start:dev": "node scripts/start-dev.mjs",
+        "start:debug": "node scripts/start-dev.mjs --inspect",
+        "start:prod": "node dist/main.js",
         "start:container": "node scripts/start-production.mjs",
         "documents:reconcile": "ts-node scripts/documents-reconcile.ts",
         "documents:backfill-stored-files": "ts-node scripts/documents-backfill-stored-files.ts",
@@ -31,7 +31,10 @@
         "prisma:migrate": "prisma migrate dev",
         "prisma:deploy": "prisma migrate deploy",
         "prisma:seed": "prisma db seed",
-        "prisma:seed:super-admin": "ts-node prisma/seed-super-admin.ts"
+        "prisma:seed:super-admin": "ts-node prisma/seed-super-admin.ts",
+        "pages:backfill-layouts": "ts-node scripts/pages-backfill-layouts.ts",
+        "pages:backfill-section-definitions": "ts-node scripts/pages-backfill-section-definitions.ts"
+        ,"news:import-external-covers": "ts-node scripts/news-import-external-covers.ts"
     },
     "prisma": {
         "seed": "ts-node prisma/seed.ts"
@@ -55,7 +58,8 @@
         "pg": "^8.12.0",
         "reflect-metadata": "^0.2.2",
         "rxjs": "^7.8.1",
-        "swagger-ui-express": "^5.0.1"
+        "swagger-ui-express": "^5.0.1",
+        "undici": "^6.21.1"
     },
     "devDependencies": {
         "@brakebein/prisma-generator-nestjs-dto": "^1.23.2",

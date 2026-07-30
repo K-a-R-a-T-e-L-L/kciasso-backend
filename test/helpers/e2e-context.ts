@@ -52,6 +52,20 @@ function getDatabaseName(databaseUrl: string) {
     return new URL(databaseUrl).pathname.replace(/^\/+/, '')
 }
 
+export function assertSafeE2eDatabase(databaseUrl: string): void {
+    const parsedUrl = new URL(databaseUrl)
+    const databaseName = getDatabaseName(databaseUrl)
+    const localHosts = new Set(['localhost', '127.0.0.1', '::1'])
+
+    if (
+        !localHosts.has(parsedUrl.hostname) ||
+        !databaseName.endsWith('_e2e') ||
+        databaseName === 'kciasso_backend_dev'
+    ) {
+        throw new Error('UNSAFE_E2E_DATABASE_TARGET')
+    }
+}
+
 function getAdminDatabaseUrl(databaseUrl: string) {
     const adminDatabaseUrl = new URL(databaseUrl)
 
@@ -80,6 +94,7 @@ function applyE2eEnv(databaseUrl: string) {
 }
 
 async function resetDatabase(databaseUrl: string) {
+    assertSafeE2eDatabase(databaseUrl)
     const databaseName = getDatabaseName(databaseUrl)
     const adminClient = new Client({
         connectionString: getAdminDatabaseUrl(databaseUrl),
@@ -92,6 +107,20 @@ async function resetDatabase(databaseUrl: string) {
     )
     await adminClient.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)}`)
     await adminClient.query(`CREATE DATABASE ${quoteIdentifier(databaseName)}`)
+    await adminClient.end()
+}
+
+async function dropE2eDatabase(databaseUrl: string) {
+    assertSafeE2eDatabase(databaseUrl)
+    const databaseName = getDatabaseName(databaseUrl)
+    const adminClient = new Client({ connectionString: getAdminDatabaseUrl(databaseUrl) })
+
+    await adminClient.connect()
+    await adminClient.query(
+        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
+        [databaseName]
+    )
+    await adminClient.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)}`)
     await adminClient.end()
 }
 
@@ -156,11 +185,12 @@ export async function createE2eContext(options: E2eContextOptions = {}) {
     }
 }
 
-export async function closeE2eContext(context?: { app: INestApplication; prisma: PrismaClient }) {
+export async function closeE2eContext(context?: { app: INestApplication; prisma: PrismaClient; databaseUrl?: string }) {
     if (!context) {
         return
     }
 
     await context.app.close()
     await context.prisma.$disconnect()
+    if (context.databaseUrl) await dropE2eDatabase(context.databaseUrl)
 }

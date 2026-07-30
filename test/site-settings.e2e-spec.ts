@@ -74,7 +74,13 @@ describe('Site settings module (e2e)', () => {
             informationPhone: '8 (495) 198-92-38',
             egeTrustPhone: '8 (495) 198-93-38',
             email: 'info@kcias.ru',
-            homeSectionsOrder: ['home.quick-access', 'home.resources', 'home.gia-reference', 'home.official-resources'],
+            homeSectionsOrder: [
+                'home.quick-access',
+                'home.resources',
+                'home.gia-reference',
+                'home.official-resources',
+                'home.slider',
+            ],
         })
     })
 
@@ -86,6 +92,7 @@ describe('Site settings module (e2e)', () => {
             'home.resources',
             'home.gia-reference',
             'home.official-resources',
+            'home.slider',
         ])
     })
 
@@ -168,9 +175,12 @@ describe('Site settings module (e2e)', () => {
     })
 
     it.each([
-        ['unknown key', ['home.quick-access', 'home.resources', 'home.gia-reference', 'home.unknown']],
-        ['duplicate key', ['home.quick-access', 'home.resources', 'home.gia-reference', 'home.gia-reference']],
-        ['incomplete array', ['home.quick-access', 'home.resources', 'home.gia-reference']],
+        ['unknown key', ['home.slider', 'home.quick-access', 'home.resources', 'home.gia-reference', 'home.unknown']],
+        [
+            'duplicate key',
+            ['home.slider', 'home.quick-access', 'home.resources', 'home.gia-reference', 'home.gia-reference'],
+        ],
+        ['incomplete array', ['home.slider', 'home.quick-access', 'home.resources', 'home.gia-reference']],
     ])('rejects %s home section order', async (_, homeSectionsOrder) => {
         const response = await request(app.getHttpServer())
             .patch('/api/admin/site-settings')
@@ -182,6 +192,7 @@ describe('Site settings module (e2e)', () => {
 
     it('accepts a valid home section permutation and preserves contacts', async () => {
         const homeSectionsOrder = [
+            'home.slider',
             'home.gia-reference',
             'home.quick-access',
             'home.official-resources',
@@ -223,7 +234,13 @@ describe('Site settings module (e2e)', () => {
             informationPhone: '+7 (495) 000-00-01',
             egeTrustPhone: '+7 (495) 000-00-02',
             email: 'support@kcias.ru',
-            homeSectionsOrder: ['home.gia-reference', 'home.quick-access', 'home.official-resources', 'home.resources'],
+            homeSectionsOrder: [
+                'home.slider',
+                'home.gia-reference',
+                'home.quick-access',
+                'home.official-resources',
+                'home.resources',
+            ],
         })
     })
 
@@ -237,6 +254,7 @@ describe('Site settings module (e2e)', () => {
                 egeTrustPhone: '8 (495) 198-93-38',
                 email: 'support@kcias.ru',
                 homeSectionsOrder: [
+                    'home.slider',
                     'home.quick-access',
                     'home.resources',
                     'home.gia-reference',

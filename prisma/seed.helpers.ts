@@ -334,6 +334,59 @@ export async function seedSiteSettings(prisma: PrismaClient) {
     })
 }
 
+export async function seedPageLayouts(prisma: PrismaClient) {
+    const definitions: Record<string, string[]> = {
+        home: ['home.quick-access', 'home.resources', 'home.gia-reference', 'home.official-resources'],
+        'news.archive': ['news.archive'],
+        'news.article': ['news.article'],
+        gia: ['gia.root'],
+        'gia.9': [
+            'gia-9.hero',
+            'gia-9.normative-documents',
+            'gia-9.demo',
+            'gia-9.deadlines',
+            'gia-9.results',
+            'gia-9.reports',
+        ],
+        'gia.11': [
+            'gia-11.hero',
+            'gia-11.normative-documents',
+            'gia-11.demo',
+            'gia-11.deadlines',
+            'gia-11.results',
+            'gia-11.reports',
+            'gia-11.additional',
+        ],
+        quality: ['quality.root'],
+        'regional-project': ['regional-project.root'],
+        about: ['about.root'],
+        'about.contacts': ['about.contacts'],
+        resources: ['resources.catalog'],
+    }
+    for (const [pageKey, keys] of Object.entries(definitions)) {
+        const layout = await prisma.pageLayout.upsert({
+            where: { page_key: pageKey },
+            create: { page_key: pageKey },
+            update: {},
+        })
+        for (const [sort_order, system_key] of keys.entries()) {
+            const existing = await prisma.pageSection.findFirst({
+                where: { page_layout_id: layout.id, system_key, deleted_at: null },
+            })
+            if (!existing)
+                await prisma.pageSection.create({
+                    data: {
+                        page_layout_id: layout.id,
+                        type: 'SYSTEM',
+                        system_key,
+                        internal_name: system_key,
+                        sort_order,
+                    },
+                })
+        }
+    }
+}
+
 export async function seedSuperAdminSafe(prisma: PrismaClient, input: SuperAdminSeedInput) {
     const email = input.email?.trim()
     const password = input.password?.trim()

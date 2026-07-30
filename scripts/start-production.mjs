@@ -18,7 +18,7 @@ if (process.env.RUN_SEED_ON_BOOT === 'true') {
     run(prismaBin, ['db', 'seed'])
 }
 
-const app = spawn('node', ['dist/src/main.js'], {
+const app = spawn('node', ['dist/main.js'], {
     stdio: 'inherit',
     env: process.env,
 })

@@ -32,6 +32,11 @@ export class CreateNewsDto {
     @IsString()
     coverImageUrl?: string | null
 
+    @ApiPropertyOptional({ nullable: true })
+    @IsOptional()
+    @IsInt()
+    coverMediaId?: number | null
+
     @ApiPropertyOptional()
     @Type(() => Number)
     @IsOptional()

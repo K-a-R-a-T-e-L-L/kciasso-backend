@@ -1,4 +1,5 @@
 import {
+    Body,
     Controller,
     Delete,
     Get,
@@ -16,6 +17,7 @@ import { Response } from 'express'
 import { memoryStorage } from 'multer'
 
 import { RequireAdminCapability } from '../../user/decorators/require-admin-capability.decorator'
+import { ImportNewsMediaDto } from '../dto/import-news-media.dto'
 import { NewsMediaUploadDto } from '../dto/news-media-upload.dto'
 import { NEWS_IMAGE_MAX_BYTES, NewsImageFile } from '../media/news-media.policy'
 import { NewsMediaService } from '../media/news-media.service'
@@ -37,6 +39,13 @@ export class AdminNewsMediaController {
     )
     upload(@UploadedFile() file: NewsImageFile) {
         return this.media.store(file)
+    }
+
+    @Post('import')
+    @ApiOperation({ summary: 'Import an owned news image from a remote URL' })
+    @ApiResponse({ status: 201, type: NewsMediaUploadDto })
+    import(@Body() dto: ImportNewsMediaDto) {
+        return this.media.importFromUrl(dto.url)
     }
 
     @Delete(':key')

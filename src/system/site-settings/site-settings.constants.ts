@@ -1,6 +1,7 @@
 export const SITE_SETTINGS_SINGLETON_KEY = 'default'
 
 export const HOME_SECTION_KEYS = [
+    'home.slider',
     'home.quick-access',
     'home.resources',
     'home.gia-reference',

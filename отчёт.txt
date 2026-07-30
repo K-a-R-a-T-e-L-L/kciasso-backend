@@ -1,100 +1,113 @@
-# Stage I8.4 — final acceptance closure
+# Stage M9.2 Part 2C — admin UX implementation
 
-## 1. Итог FINAL READY / NOT READY
+## 1. READY / NOT READY
 
-FINAL READY. Acceptance debt закрыт на Node 22.14.0. Runtime использовал schema `kciasso_i8_4_acceptance`, backend 4491, frontend 3491, workers=1. User ports 3000/4000 не запускались и не изменялись.
+NOT READY. Implementation was started but the approved Part 2C scope is not complete.
 
-## 2. Runtime/preflight
+## 2. Preserved dirty state
 
-До запуска проверены listening ports и существующие Node processes; пользовательские процессы не останавливались. Task-owned backend/frontend processes были запущены с сохранёнными PID и остановлены exact PID после проверок.
+Both repositories were already dirty and were preserved. No reset, restore, clean, stash, commit, push, deploy, backend production source, Prisma, migrations, generated Kubb, public renderer or normal dev data was changed.
 
-## 3. 67-placement fixture
+## 3. Implemented architecture
 
-Добавлен permanent helper `tests/browser/helpers/placement-fixture.ts`. Fixture создаёт реальный документ независимо от seed order с 67 валидными registry keys, human-readable first/middle/last labels и deterministic task cleanup. Добавлен реальный registry placement `regionalnyy-proekt.documents` в backend/frontend registry; raw synthetic keys не используются. Trigger показал `+ ещё 65`.
+The approved frontend-only direction remains in force: typed pages view models, Mantine controls/modals, URL-backed news query, existing API clients/contracts retained.
 
-## 4. Desktop 65+ scroll
+## 4. UTF-8/mojibake cleanup
 
-`placement-selector-scroll.spec.ts`: 2/2 desktop tests PASS. Для 67 entries подтверждены portal в body, отсутствие descendant card, fixed position, viewport bounds, `scrollHeight > clientHeight`, initial scrollTop, wheel, End/last-item reachability, readable labels и отсутствие raw keys.
+Incomplete. Newly rewritten metadata and publication controls use UTF-8-safe escaped Russian literals; the required scoped cleanup across all target files is still pending.
 
-## 5. Mobile 65+ scroll
+## 5. Pages registry
 
-`placement-selector-scroll.spec.ts`: 2/2 mobile tests PASS at 390x844. Подтверждены real scroll container, last item, body horizontal overflow = 0, popup bounds and close/focus behavior.
+Not yet implemented.
 
-## 6. Bottom flip
+## 6. Page editor
 
-PASS desktop/mobile. Trigger was placed at the viewport bottom; measured popup bounding boxes satisfy `popup.bottom <= viewport.height - 12` and `popup.top < trigger.top`.
+Added `admin-section-view-model.ts` with typed section kinds, friendly system labels/fallbacks, immutable reasons and contacts settings target. The editor has not yet been wired to it.
 
-## 7. Right shift
+## 7. Section action matrix
 
-PASS desktop/mobile. Trigger was placed at the right edge; measured popup satisfies `right <= viewport.width - 12` and `left >= 12`.
+Not yet implemented in the editor UI.
 
-## 8. Focus return
+## 8. Sortable behavior
 
-PASS. Placement popup: trigger -> open -> first item -> Escape and close button both return focus to original trigger. Actions menu: first menuitem -> Escape returns focus to trigger. `FloatingPopover` only focuses connected anchors.
+Not yet implemented: pointer/touch activation and optimistic rollback remain pending.
 
-## 9. Anchor unmount
+## 9. Lazy previews
 
-PASS. Popup anchor was removed while open; popup was removed without pageerror or stale-node focus attempt.
+Not yet implemented.
 
-## 10. Public grid viewport matrix
+## 10. Global sections
 
-`public-news-grid.spec.ts`: 5/5 PASS — 1440x900, 1366x768, 1024x768, 768x1024, 390x844. Grid/column count, card bounds, pagination, clamp and horizontal overflow assertions pass.
+Not yet implemented.
 
-## 11. Public detail
+## 11. Sidebar contrast
 
-`public-news-detail-cover.spec.ts`: desktop/mobile 2/2 PASS at 1366x768 and 390x844.
+`AdminNavigation.client.tsx` now uses explicit transparent/default, rgba hover, blue active/active-hover and white focus-visible styles rather than implicit `subtle` behavior. Browser contrast verification remains pending.
 
-## 12. Category reorder
+## 12. Documents metadata
 
-`admin-news-categories-reorder.spec.ts`: desktop/mobile 2/2 PASS, including reload persistence and boundary controls.
+`DocumentMetadataForm.client.tsx` was rewritten with Mantine `TextInput`, `Textarea`, `FileInput`, `Stack` and `Group`; `Box component` form controls were removed from that file.
 
-## 13. Existing document regression
+## 13. Placement/publication modal
 
-Combined relevant run: desktop 5/5 PASS and mobile 5/5 PASS:
+`PlacementPublicationControls.client.tsx` was rewritten using Mantine `Modal`, `Select`, `TextInput`, `Alert`, `Stack` and grouped actions. Existing endpoint/payload are retained.
 
-- actions: 1/1 PASS
-- compact-ux: 1/1 PASS
-- filters: 1/1 PASS
-- states: 1/1 PASS
-- floating-popovers: 1/1 PASS
+## 14. Secret links
 
-## 14. Stage I8 browser specs
+Not yet implemented.
 
-Combined relevant run: desktop 4/4 PASS and mobile 4/4 PASS:
+## 15. News URL query
 
-- `admin-news-publication.spec.ts`: 1/1 each
-- `admin-documents-placement-publication.spec.ts`: 1/1 each
-- `admin-documents-shared-file-permissions.spec.ts`: 1/1 each
-- `admin-auth-rate-limit.spec.ts`: 1/1 each, including 429 and `Retry-After`
+Not yet implemented.
 
-## 15. Backend/frontend checks
+## 16. Pagination 10/20/50/100
 
-- Backend full E2E after registry/fixture/test changes: 13 suites, 93/93 PASS.
-- Backend unit: 32/32 PASS.
-- Backend lint/build: PASS.
-- Frontend unit: 55/55 PASS.
-- Frontend lint: PASS.
-- Frontend production build: PASS.
-- Kubb regeneration: PASS; generated output was not manually edited.
-- Worker integration: 1/1 PASS.
-- Rate-limit integration: 1/1 PASS.
+Not yet implemented. Backend limit 1–100 remains sufficient.
 
-## 16. Console/network
+## 17. Categories
 
-Browser runs completed without pageerror, unexpected requestfailed, unexpected 5xx or React warnings. The only intentional public 404 is the draft/unpublished fixture check. Horizontal overflow assertions pass in desktop/mobile popup and public viewport suites.
+Not yet implemented.
 
-## 17. Changed files
+## 18. Cover import UI
 
-Backend: document registry, rate-limit integration timeout, existing Stage I8 publication/dedup/worker files and migrations. Frontend: document registry, `FloatingPopover` viewport clamp, permanent placement fixture/helper, popup acceptance spec, explicit Playwright viewport projects and existing Stage I8 UI/generated API files. No commit/push/deploy performed.
+Not yet implemented.
 
-## 18. Cleanup
+## 19. Source gates
 
-Exact task PIDs were stopped. Schema `kciasso_i8_4_acceptance` was dropped with CASCADE. Exact `C:\Temp\kciasso-i8-4-*` storage/log/scripts were removed. Final listening-port check: 4491/3491/3000/4000 free; ports 3000/4000 untouched.
+Incomplete. `npm run check:admin-ui` fails only on two native `<div>` instances in `src/widgets/pages/PageLayoutRenderer/OrderedPublicPage.test.tsx`, a public-renderer test outside the authorized Part 2C scope. Target gates have not been rerun to zero after all intended edits.
 
-## 19. Production prerequisites
+## 20. Unit tests
 
-Acceptance criteria are satisfied. Existing deployment prerequisites remain unchanged: apply committed migrations before serving traffic and run the normal CI/container build in deployment environment. No deployment was performed in this task.
+No new tests were added; TDD suite remains incomplete.
 
-## 20. Exact blocker
+## 21. Browser desktop/tablet/mobile
 
-None. Stage I8.4 acceptance is closed with FINAL READY.
+Not run. Task-owned E2E setup and fixtures remain pending.
+
+## 22. Accessibility
+
+The publication UI now receives Mantine modal focus/Escape lifecycle. Remaining pages/documents/news accessibility work is pending.
+
+## 23. Backend/frontend verification
+
+Frontend `npx tsc --noEmit` PASS after the partial changes. `npm run check:admin-ui` FAILS on the two out-of-scope public test nodes described above. Full verification was not run.
+
+## 24. Screenshots
+
+None created.
+
+## 25. Processes/task DB cleanup
+
+No task process or E2E database was created in this implementation attempt. User ports 3000/4000 were untouched.
+
+## 26. Changed/deleted files
+
+Changed by this attempt: `src/widgets/admin/AdminNavigation/AdminNavigation.client.tsx`, `src/widgets/admin/AdminDocumentsPanel/DocumentMetadataForm.client.tsx`, `src/widgets/admin/AdminDocumentsPanel/PlacementPublicationControls.client.tsx`. Added: `src/widgets/admin/AdminPageLayoutEditor/admin-section-view-model.ts`. This report was overwritten. All other dirty files are preserved pre-existing work.
+
+## 27. Exact blocker
+
+The remaining authorized Part 2C implementation is substantial and incomplete: page/editor/global integration, documents share/selector/version/mutation cleanup, news query/forms/categories, tests, safe E2E acceptance and source gate closure. The public-renderer test policy failure cannot be resolved within the instruction not to modify Part 2B.
+
+## 28. Inputs for next stage
+
+Resume Part 2C implementation only; do not start legacy DB cleanup, public renderer changes or a subsequent stage.
