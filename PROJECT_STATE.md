@@ -1,6 +1,6 @@
 # KCIASSO — PROJECT_STATE
 
-Last updated: 2026-07-29, Stage M9.2 Part 2B.
+Last updated: 2026-07-30, Stage M9.2 Part 2D.
 
 ## Logical project
 
@@ -17,9 +17,9 @@ Last updated: 2026-07-29, Stage M9.2 Part 2B.
 - Section types are `PAGE_SYSTEM`, `GLOBAL_SYSTEM`, `PAGE_CUSTOM_HTML` and `GLOBAL_CUSTOM_HTML`.
 - Legacy `PageSection`, `GlobalHtmlSection` and `GlobalHtmlSlot` remain preserved only as backfill sources pending separate cleanup acceptance.
 - Global custom content is stored once; each of the 13 registry pages owns an independently sortable/visible placement.
-- `global.contacts` is one immutable `GLOBAL_SYSTEM` definition, placed last by default on every registry page.
+- `global.contacts` is one immutable `GLOBAL_SYSTEM` definition, placed last by default on every registry page except the full `about.contacts` page.
 - Public pages consume the generated definition/placement contract through one explicit adapter and one ordered `PublicPageSections` runtime.
-- System rendering uses the exact 30-key backend registry map; route-owned server nodes are supplied through one typed provider. Custom HTML uses sandboxed `srcDoc` iframes.
+- System rendering uses the exact 31-key backend registry map; route-owned server nodes are supplied through one typed provider. Custom HTML uses sandboxed `srcDoc` iframes inside the shared public container.
 - Contacts are rendered only by the `global.contacts` placement; `MainLayout` no longer inserts a contact section.
 
 ## Main routes and modules
@@ -28,13 +28,20 @@ Last updated: 2026-07-29, Stage M9.2 Part 2B.
 - Pages implementation: `src/system/pages`; registry: `src/system/pages/pages.registry.ts`.
 - Backfill implementation: `src/system/pages/pages-backfill.service.ts`; CLI: `scripts/pages-backfill-section-definitions.ts`.
 - Admin frontend: `/admin/pages`, page layout editor and global HTML definition editor.
+- Admin page registry uses friendly 13-page cards; the editor keeps all four section types in one sortable list with handle-only pointer/touch/keyboard DnD, optimistic rollback/stale reload and lazy custom-HTML previews.
+- Admin news query state is URL/server-owned (`page`, `limit`, `search`, generated `status`, `category`, generated `sort`); pagination supports 10/20/50/100 without post-pagination client filtering.
+- Admin documents, publication controls, share links and news categories/forms use Mantine controls/modals; the admin source gate enforces zero legacy controls, native dialogs, Box-backed controls and scoped mojibake.
 - Public renderer: `src/widgets/pages/PublicPageSections`; all 13 registry routes use it directly or through the thin `OrderedPublicPage` wrapper.
+- Canonical GIA metadata lives in `src/shared/content/gia-sections.ts`; GIA-9 has five and GIA-11 seven independently managed root previews and matching child routes.
+- GIA child routes fetch only the selected document section and render hero, selected content and contacts through the same public renderer.
+- Home carousel and public custom HTML use the same 1180px shared container as normal public sections.
 
 ## Database and generated contracts
 
 - Confirmed local development DB: PostgreSQL `localhost/kciasso_backend_dev`, schema `public`, environment `development`.
 - Fifteen additive migrations are current, including the two M9.2 definition/placement migrations.
 - Controlled M9.2 backfill was applied locally; repeated apply is a true no-op with unchanged page revisions.
+- Part 2D local repair removed `about.contacts/global.contacts` and managed `gia-11.additional`, then materialized `gia-11.essay` and `gia-11.analytics`; custom rows were unchanged.
 - Generated paths: backend `src/.generated/prisma`; frontend `src/shared/api/generated`. Never edit generated output manually.
 - Pages Swagger success and documented error responses are typed; generated PagesController success/error `any` counts are both zero.
 
@@ -50,16 +57,16 @@ Last updated: 2026-07-29, Stage M9.2 Part 2B.
 - Backend: `npx prisma validate`, `npx prisma generate`, `npx prisma migrate status`, `npm run lint -- --no-fix`, `npm test -- --runInBand`, `npm run test:e2e -- --runInBand`, `npm run build`.
 - Frontend: `npx tsc --noEmit`, `npm run lint`, `npm run check:admin-ui`, `npm run test:unit`, `npm run build`.
 - Kubb: start an isolated backend, verify `/api/docs-json`, then run `npm run api:generate`.
-- Latest backend verification: 11 unit suites / 59 tests; pages unit 16; 16 E2E suites / 136 tests, including concurrency 15, contract 24 and backfill 4; build/lint/diff check pass.
-- Latest frontend verification: TypeScript, lint and production build pass; 24 unit files / 63 tests and Part 2B Playwright 2/2 pass.
-- Latest Part 2B backend read-only regression: Prisma validate/status, lint, 11 unit suites / 59 tests and build pass. Full unchanged Part 1 E2E baseline remains 16 suites / 136 tests.
+- Latest backend verification: Prisma validate/status, lint, build and diff check pass; 12 unit suites / 74 tests and 17 E2E suites / 149 tests pass.
+- Latest frontend verification: TypeScript, lint, source gate, fresh task-API production build and diff check pass; 29 unit files / 103 tests pass.
+- Part 2D Playwright acceptance covers 1440×900, 768×1024, 390×844 and 1920×1080; all 12 GIA and 13 quality child routes pass, with 11 screenshots in frontend `test-results`.
 
 ## Codebase Memory
 
-- Fast non-persistent indexes refreshed after M9.2 Part 1 FINAL.
-- Backend: 1,369 nodes / 3,549 edges.
-- Frontend: 1,353 nodes / 2,724 edges.
+- Fast indexes refreshed after M9.2 Part 2D with `persistence=false`; no repository artifacts were created.
+- Backend: 1,381 nodes / 3,578 edges.
+- Frontend: 1,421 nodes / 2,914 edges.
 
 ## Current next task
 
-M9.2 Part 2B is READY. Begin the next Part 2 admin/visual stage only through a separate explicit task. Do not start legacy cleanup until full frontend/runtime acceptance; the six preserved home custom placements require an explicit data-owner decision if their iframe heights should change.
+M9.2 Part 2D implementation and local acceptance are complete. Stop here until a separate explicit next-stage task. Do not start admin review, legacy table/column cleanup or deployment from this state.

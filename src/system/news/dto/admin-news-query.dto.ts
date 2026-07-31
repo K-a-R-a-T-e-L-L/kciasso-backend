@@ -1,6 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform, Type } from 'class-transformer'
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+
+export enum AdminNewsStatusFilter {
+    DRAFT = 'draft',
+    SCHEDULED = 'scheduled',
+    PUBLISHED = 'published',
+}
+
+export enum AdminNewsSort {
+    NEWEST = 'newest',
+    OLDEST = 'oldest',
+    TITLE = 'title',
+}
 
 export class AdminNewsQueryDto {
     @ApiPropertyOptional({ default: 1 })
@@ -30,11 +42,22 @@ export class AdminNewsQueryDto {
 
     @ApiPropertyOptional()
     @IsOptional()
-    @Transform(({ value }) => {
-        if (value === 'true' || value === true) return true
-        if (value === 'false' || value === false) return false
-        return value
+    @Transform(({ value, obj, key }) => {
+        const rawValue = obj && key in obj ? obj[key] : value
+        if (rawValue === 'true' || rawValue === true) return true
+        if (rawValue === 'false' || rawValue === false) return false
+        return rawValue
     })
     @IsBoolean()
     isPublished?: boolean
+
+    @ApiPropertyOptional({ enum: AdminNewsStatusFilter })
+    @IsOptional()
+    @IsEnum(AdminNewsStatusFilter)
+    status?: AdminNewsStatusFilter
+
+    @ApiPropertyOptional({ enum: AdminNewsSort })
+    @IsOptional()
+    @IsEnum(AdminNewsSort)
+    sort?: AdminNewsSort
 }

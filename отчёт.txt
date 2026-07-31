@@ -1,113 +1,278 @@
-# Stage M9.2 Part 2C — admin UX implementation
+# Stage M9.2 Part 2D — public content parity restoration
+
+Дата: 2026-07-30.
 
 ## 1. READY / NOT READY
 
-NOT READY. Implementation was started but the approved Part 2C scope is not complete.
+READY.
+
+Public content parity восстановлен без отката unified renderer и без изменения пользовательских custom placements. Fresh production build, backend unit/E2E, frontend static/unit и browser acceptance прошли.
+
+Зафиксировано одно процедурное отклонение: первый запуск штатного `npm run test:e2e` выполнил встроенный `prisma generate`, хотя stage запрещал этот вызов. Schema не менялась; generated backend diff после запуска равен нулю. Финальный полный E2E был повторён прямым Jest command без генерации.
 
 ## 2. Preserved dirty state
 
-Both repositories were already dirty and were preserved. No reset, restore, clean, stash, commit, push, deploy, backend production source, Prisma, migrations, generated Kubb, public renderer or normal dev data was changed.
+Сохранены исходные dirty worktrees Part 2C/N1 и пользовательские изменения. Backend до задачи: branch `master`, HEAD `6779259d...`; frontend: branch `master`, HEAD `62d92ad...`. Не выполнялись reset, restore, checkout, clean, stash, commit, push, deploy или изменение веток. Pre-existing admin/news/generated frontend и backend news changes не присваиваются Part 2D.
 
-## 3. Implemented architecture
+## 3. Fresh build artefact cleanup
 
-The approved frontend-only direction remains in force: typed pages view models, Mantine controls/modals, URL-backed news query, existing API clients/contracts retained.
+До source changes удалён только exact generated frontend `.next`. Проверено: `.next removed = true`, tracked files removed = 0. После первой точечной prerender-ошибки частичный `.next` был безопасно удалён повторно и создан успешным production build. `node_modules`, test-results и source files не удалялись.
 
-## 4. UTF-8/mojibake cleanup
+## 4. PageLayout registry changes
 
-Incomplete. Newly rewritten metadata and publication controls use UTF-8-safe escaped Russian literals; the required scoped cleanup across all target files is still pending.
+В `pages.registry.ts` добавлена семантика `includeGlobalContacts?: boolean`. Для `about.contacts` задано `false`; остальные страницы сохраняют default `true`. GIA-11 registry теперь содержит `gia-11.essay` и `gia-11.analytics`, а `gia-11.additional` исключён.
 
-## 5. Pages registry
+Exact GIA-11 managed order: hero 0, normative 1, demo 2, deadlines 3, results 4, reports 5, essay 6, analytics 7, contacts 1000000.
 
-Not yet implemented.
+## 5. PageLayout repair/backfill
 
-## 6. Page editor
+Canonical `PagesBackfillService` расширен additive/corrective plan actions:
 
-Added `admin-section-view-model.ts` with typed section kinds, friendly system labels/fallbacks, immutable reasons and contacts settings target. The editor has not yet been wired to it.
+- создаёт отсутствующие essay/analytics definitions и placements;
+- удаляет exact managed `gia-11.additional` placement;
+- удаляет obsolete definition только при exact PAGE_SYSTEM ownership/renderer match и отсутствии оставшихся placements;
+- удаляет только `about.contacts/global.contacts`;
+- считает deletions и `customRowsChanged`;
+- increment каждой реально затронутой layout revision планируется один раз;
+- повторный apply — no-op.
 
-## 7. Section action matrix
+Focused E2E также доказывает rollback при induced failure и безопасный concurrent no-op после convergence.
 
-Not yet implemented in the editor UI.
+## 6. About contacts parity
 
-## 8. Sortable behavior
+Local data и browser DOM:
 
-Not yet implemented: pointer/touch activation and optimistic rollback remain pending.
+- `about`: `about.root=1`, `global.contacts=1`;
+- `about.contacts`: `about.contacts=1`, `global.contacts=0`.
 
-## 9. Lazy previews
+Route-level suppression/filter во frontend не добавлялся; full ContactsPage не урезался.
 
-Not yet implemented.
+## 7. Canonical GIA metadata
 
-## 10. Global sections
+Создан `src/shared/content/gia-sections.ts` с типами `GiaExamKey`, `GiaSectionDefinition`, exact metadata 5/7 и helpers `getGiaSections`, `getGiaSectionBySlug`, `getGiaSectionByRendererKey`.
 
-Not yet implemented.
+Descriptions перенесены из существующего content metadata. `legacy.mock.ts` теперь производит `ExamPageData.sections` из canonical registry. Дубли slug aliases удалены вместе с неиспользуемым `ExamPageTabs.client.tsx`; `ExamPage.tsx` оставлен как presentation-only hero/one-section renderer.
 
-## 11. Sidebar contrast
+## 8. GIA-9 root
 
-`AdminNavigation.client.tsx` now uses explicit transparent/default, rgba hover, blue active/active-hover and white focus-visible styles rather than implicit `subtle` behavior. Browser contrast verification remains pending.
+`/gia-9` использует public layout `gia.9`, partition helper и существующий `PublicPageSections`. Root выводит 5 independently ordered/visible preview placements, hero и один contacts placement. Root production source не вызывает public documents endpoint и не монтирует полные document lists.
 
-## 12. Documents metadata
+Browser: previews 5, document groups на root 0.
 
-`DocumentMetadataForm.client.tsx` was rewritten with Mantine `TextInput`, `Textarea`, `FileInput`, `Stack` and `Group`; `Box component` form controls were removed from that file.
+## 9. GIA-9 child routes
 
-## 13. Placement/publication modal
+Добавлен `/gia-9/[sectionSlug]` с 5 static params, metadata/canonical, unknown/hidden placement `notFound`, sibling navigation и back link. Layout проверяется до единственного selected-section document fetch.
 
-`PlacementPublicationControls.client.tsx` was rewritten using Mantine `Modal`, `Select`, `TextInput`, `Alert`, `Stack` and grouped actions. Existing endpoint/payload are retained.
+Browser: 5/5 routes HTTP 200; на каждом hero/selected renderer/contacts по одному.
 
-## 14. Secret links
+## 10. GIA-11 root
 
-Not yet implemented.
+`/gia-11` использует тот же root component и public renderer. Browser подтверждает 7 preview cards, zero root document lists, independent essay и analytics, contacts once.
 
-## 15. News URL query
+## 11. GIA-11 child routes
 
-Not yet implemented.
+Добавлен `/gia-11/[sectionSlug]` с 7 static params и тем же typed contract. Browser: 7/7 routes HTTP 200; essay/analytics доступны отдельно; selected renderer и contacts по одному; obsolete renderer отсутствует.
 
-## 16. Pagination 10/20/50/100
+## 12. GIA-11 additional replacement
 
-Not yet implemented. Backend limit 1–100 remains sufficient.
+Local data proof:
 
-## 17. Categories
+- `gia-11.additional` definitions = 0;
+- `gia-11.additional` placements = 0;
+- `gia-11.essay` placement on `gia.11` = 1;
+- `gia-11.analytics` placement on `gia.11` = 1.
 
-Not yet implemented.
+Compatibility alias в production runtime не добавлялся.
 
-## 18. Cover import UI
+## 13. Public renderer coverage
 
-Not yet implemented.
+Frontend known renderer registry: 31 unique keys. Удалён `gia-11.additional`, добавлены `gia-11.essay` и `gia-11.analytics`. Unit coverage: 31/31 callable mappings; known-key unknown fallback = 0 в browser acceptance.
 
-## 19. Source gates
+## 14. Quality root/child verification
 
-Incomplete. `npm run check:admin-ui` fails only on two native `<div>` instances in `src/widgets/pages/PageLayoutRenderer/OrderedPublicPage.test.tsx`, a public-renderer test outside the authorized Part 2C scope. Target gates have not been rerun to zero after all intended edits.
+Quality production source не изменялся. После fresh build:
 
-## 20. Unit tests
+- root `quality.root=1`, `global.contacts=1`;
+- все 13 expected card href присутствуют;
+- 13/13 child routes HTTP 200;
+- каждый child содержит `quality.section=1`, `global.contacts=1`;
+- unknown renderer = 0;
+- duplicate visual group не обнаружен.
 
-No new tests were added; TDD suite remains incomplete.
+## 15. Home carousel width
 
-## 21. Browser desktop/tablet/mobile
+`HomeImageCarousel.client.tsx` оборачивает неизменённый Carousel в shared `Container`. Logic, slides, autoplay, arrows, indicators, height и внутренний spacing не менялись.
 
-Not run. Task-owned E2E setup and fixtures remain pending.
+Visible Chromium at requested viewport `innerWidth=1920` reported `clientWidth=1905` because of the vertical scrollbar. Normal/carousel/custom measurements are identical: width `1180`, left `362.4`, right `1542.4`. Поэтому parity difference = 0px; mathematical `370/1550` относится к full 1920 content width без 15px scrollbar.
 
-## 22. Accessibility
+## 16. Custom HTML width/security
 
-The publication UI now receives Mantine modal focus/Escape lifecycle. Remaining pages/documents/news accessibility work is pending.
+`PublicCustomHtmlSection` оборачивает existing iframe в shared `Container`. Сохранены:
+
+- `srcDoc` composition и HTML/CSS/JavaScript;
+- sandbox exact `allow-scripts allow-forms allow-modals allow-popups allow-downloads`;
+- `referrerPolicy=no-referrer`;
+- height clamp, width 100%, sort order и visibility.
+
+Browser: home custom placements = 6, iframes = 6, security attributes 6/6, width 1180, no horizontal overflow.
+
+## 17. Public parity matrix
+
+- Home: carousel/custom/normal width parity PASS, six custom placements PASS.
+- About root/contacts child: `1/0` и `0/1` contacts counts PASS.
+- GIA-9: `5` root previews, `0` root document lists, `5/5` children PASS.
+- GIA-11: `7` root previews, `0` root document lists, `7/7` children PASS.
+- Quality: 13 cards, `13/13` children PASS.
+- Hydration/owned console/target API failures: 0.
+- Horizontal overflow at tested viewports: 0.
+
+## 18. Backend tests
+
+- Unit: PASS — 12 suites / 74 tests.
+- Focused pages backfill E2E: PASS — 1 suite / 7 tests.
+- Full E2E final direct Jest invocation: PASS — 17 suites / 149 tests.
+- Registry tests cover contacts and exact GIA-11 replacement.
+- Backfill tests cover preservation, conflicts, exact repair, ordering, revisions, idempotence, rollback and concurrent converged invocation.
+
+Expected document-file warning canaries remained non-failing.
+
+## 19. Frontend tests
+
+- `npx tsc --noEmit`: PASS.
+- `npm run lint`: PASS.
+- `npm run check:admin-ui`: PASS.
+- `npm run test:unit`: PASS — 29 files / 103 tests.
+- GIA metadata, partitioning, renderer 31/31 and custom iframe container/security have focused coverage.
+
+## 20. Browser acceptance
+
+Visible Playwright Chromium: PASS at 1440x900, 768x1024, 390x844 and 1920x1080.
+
+Первый automation run достиг timeout после assertion failure и оставил browser tree; exact task tree root PID 25812 и его descendants были идентифицированы и остановлены. Исправленный script всегда закрывает browser в success/failure. Два итоговых полных runs завершились PASS; browser processes не остались.
+
+## 21. PageLayout data proof
+
+Guard: host local, database `kciasso_backend_dev`, `NODE_ENV=development`.
+
+First dry-run/apply:
+
+```text
+definitionsCreated=2
+placementsCreated=2
+placementsDeleted=2
+definitionsDeleted=1
+layoutsRevisionIncremented=2
+customRowsChanged=0
+conflicts=[]
+```
+
+Second dry-run and second apply: every mutation counter = 0, conflicts empty.
+
+Final direct counts: `about.contacts/global.contacts=0`, `about/global.contacts=1`, additional `0/0`, essay `1`, analytics `1`, home custom placements `6`.
+
+## 22. Source/schema/generated gates
+
+- backend API DTO changes = 0;
+- Prisma schema changes = 0;
+- migration files added/changed = 0; 15 current;
+- Kubb generated changes attributable to Part 2D = 0; Kubb не запускался;
+- backend Prisma generated diff attributable to Part 2D = 0;
+- admin production changes attributable to Part 2D = 0;
+- news contract changes attributable to Part 2D = 0;
+- route-level contacts suppression = 0;
+- duplicate local GIA slug maps = 0;
+- frontend production `gia-11.additional` matches = 0.
+
+Procedural note: один ранний `npm run test:e2e` вызвал embedded `prisma generate`; generated diff не появился. Финальный E2E command генератор не вызывал.
 
 ## 23. Backend/frontend verification
 
-Frontend `npx tsc --noEmit` PASS after the partial changes. `npm run check:admin-ui` FAILS on the two out-of-scope public test nodes described above. Full verification was not run.
+Backend PASS:
+
+- `npx prisma validate`;
+- `npx prisma migrate status` — 15 current;
+- `npm run lint -- --no-fix`;
+- `npm test -- --runInBand`;
+- direct full E2E Jest;
+- `npm run build`;
+- `git diff --check`.
+
+Frontend PASS:
+
+- TypeScript;
+- lint;
+- admin source gate;
+- 29/103 unit;
+- fresh `npm run build` with all three task API env values on 4522;
+- `git diff --check`.
+
+Fresh build initially exposed a server/client component boundary in child navigation; `Anchor component={Link}` was replaced by ordinary accessible `Link`, after which repeated production builds and browser acceptance passed.
+
+Final fast Codebase Memory refresh (`persistence=false`) completed with no repository artifact: backend 1,381 nodes / 3,578 edges; frontend 1,421 nodes / 2,914 edges.
 
 ## 24. Screenshots
 
-None created.
+Stored in frontend `test-results`:
 
-## 25. Processes/task DB cleanup
+- `part2d-home-1920-fixed.png`
+- `part2d-home-mobile-fixed.png`
+- `part2d-about-fixed.png`
+- `part2d-about-contacts-fixed.png`
+- `part2d-gia9-root-fixed.png`
+- `part2d-gia9-child-fixed.png`
+- `part2d-gia11-root-fixed.png`
+- `part2d-gia11-essay-fixed.png`
+- `part2d-gia11-analytics-fixed.png`
+- `part2d-quality-root-fixed.png`
+- `part2d-quality-rsoko-fixed.png`
 
-No task process or E2E database was created in this implementation attempt. User ports 3000/4000 were untouched.
+## 25. Processes/E2E DB cleanup
+
+Task backend PID 34232 on 4522 and final frontend PID 12984 on 4523 were stopped exactly. Earlier frontend PID 18060 was stopped before rebuild. Playwright browser trees were closed/stopped exactly.
+
+Final:
+
+```text
+PORT_4522_FREE=True
+PORT_4523_FREE=True
+task-owned _e2e databases=[]
+task logs removed=true
+task containers=0
+```
+
+Ports 3000/4000 были свободны при preflight и не использовались. Глобальный Node kill не выполнялся.
 
 ## 26. Changed/deleted files
 
-Changed by this attempt: `src/widgets/admin/AdminNavigation/AdminNavigation.client.tsx`, `src/widgets/admin/AdminDocumentsPanel/DocumentMetadataForm.client.tsx`, `src/widgets/admin/AdminDocumentsPanel/PlacementPublicationControls.client.tsx`. Added: `src/widgets/admin/AdminPageLayoutEditor/admin-section-view-model.ts`. This report was overwritten. All other dirty files are preserved pre-existing work.
+Backend Part 2D:
+
+- `PROJECT_STATE.md`
+- `src/system/pages/pages.registry.ts`
+- `src/system/pages/pages.registry.spec.ts`
+- `src/system/pages/pages-backfill.service.ts`
+- `src/system/pages/pages-backfill.types.ts`
+- `test/pages-backfill.e2e-spec.ts`
+- `отчёт.txt`
+
+Frontend Part 2D:
+
+- root routes `src/app/(site)/gia-9/page.tsx`, `gia-11/page.tsx`;
+- new dynamic child route files for GIA-9/GIA-11;
+- `src/shared/content/gia-sections.ts` and test;
+- `src/shared/content/legacy.mock.ts`;
+- ExamPage presentation/root/child/preview/partition files and tests;
+- deleted unused `ExamPageTabs.client.tsx`;
+- Home carousel;
+- public custom HTML component/test;
+- public renderer registry/test;
+- 11 Part 2D screenshots.
+
+Pre-existing Part 2C admin, frontend generated, backend news and prior screenshots/tests remain preserved and are not Part 2D changes.
 
 ## 27. Exact blocker
 
-The remaining authorized Part 2C implementation is substantial and incomplete: page/editor/global integration, documents share/selector/version/mutation cleanup, news query/forms/categories, tests, safe E2E acceptance and source gate closure. The public-renderer test policy failure cannot be resolved within the instruction not to modify Part 2B.
+Нет функционального blocker. Все READY gates по runtime/data/source пройдены. Единственное disclosed procedural deviation — ранний embedded `prisma generate` без generated diff.
 
 ## 28. Inputs for next stage
 
-Resume Part 2C implementation only; do not start legacy DB cleanup, public renderer changes or a subsequent stage.
+Part 2D завершён. Не начинать admin review, deployment, legacy table cleanup или следующий stage без отдельной явной авторизации.

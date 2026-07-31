@@ -32,6 +32,7 @@ type DesiredPlacement = {
     sourceOrder: number
     sourceId: number
     isVisible: boolean
+    managedOrder?: number
 }
 
 export class PagesBackfillService {
@@ -130,6 +131,7 @@ export class PagesBackfillService {
                     sourceOrder: legacy?.sort_order ?? index,
                     sourceId: legacy?.id ?? -(page.systemSections.length - index),
                     isVisible: legacy?.is_enabled ?? true,
+                    managedOrder: index,
                 })
             }
 
@@ -226,14 +228,18 @@ export class PagesBackfillService {
                     .map(placement => placement.section_definition.key)
                     .filter((key): key is string => key !== null)
             )
-            const ordered = [
+            const ordered: DesiredPlacement[] = [
                 ...(desiredByPage.get(page.pageKey) ?? []),
-                {
-                    definitionKey: GLOBAL_CONTACTS_KEY,
-                    sourceOrder: Number.MAX_SAFE_INTEGER - 1,
-                    sourceId: 0,
-                    isVisible: true,
-                },
+                ...(page.includeGlobalContacts === false
+                    ? []
+                    : [
+                          {
+                              definitionKey: GLOBAL_CONTACTS_KEY,
+                              sourceOrder: Number.MAX_SAFE_INTEGER - 1,
+                              sourceId: 0,
+                              isVisible: true,
+                          },
+                      ]),
                 ...globalDesired,
             ]
             const fresh = !layout || layout.placements.length === 0
@@ -243,13 +249,47 @@ export class PagesBackfillService {
                 placementsToCreate.push({
                     pageKey: page.pageKey,
                     definitionKey: desired.definitionKey,
-                    sortOrder: nextOrder++,
+                    sortOrder: fresh ? nextOrder++ : (desired.managedOrder ?? nextOrder++),
                     isVisible: desired.isVisible,
                 })
             }
         }
 
+        const placementsToDelete: PagesBackfillPlan['placementsToDelete'] = []
+        const definitionsToDelete: PagesBackfillPlan['definitionsToDelete'] = []
+        const planManagedPlacementDeletion = (pageKey: string, definitionKey: string) => {
+            const layout = layoutByKey.get(pageKey)
+            const definition = definitionByKey.get(definitionKey)
+            if (!layout || !definition) return
+            for (const placement of layout.placements.filter(row => row.section_definition_id === definition.id)) {
+                placementsToDelete.push({
+                    id: placement.id,
+                    pageKey,
+                    definitionId: definition.id,
+                    definitionKey,
+                })
+            }
+        }
+        planManagedPlacementDeletion('about.contacts', GLOBAL_CONTACTS_KEY)
+        const obsolete = definitionByKey.get('gia-11.additional')
+        if (
+            obsolete?.type === SectionDefinitionType.PAGE_SYSTEM &&
+            obsolete.owner_page_key === 'gia.11' &&
+            obsolete.system_renderer_key === 'gia-11.additional'
+        ) {
+            planManagedPlacementDeletion('gia.11', 'gia-11.additional')
+            const remainingPlacements = layouts
+                .flatMap(layout => layout.placements)
+                .filter(
+                    placement =>
+                        placement.section_definition_id === obsolete.id &&
+                        !placementsToDelete.some(deletion => deletion.id === placement.id)
+                )
+            if (remainingPlacements.length === 0) definitionsToDelete.push({ id: obsolete.id, key: obsolete.key! })
+        }
+
         const revisionPageKeys = new Set(placementsToCreate.map(action => action.pageKey))
+        for (const deletion of placementsToDelete) revisionPageKeys.add(deletion.pageKey)
         for (const definition of definitionsToUpdate) {
             if (definition.ownerPageKey) revisionPageKeys.add(definition.ownerPageKey)
             else {
@@ -269,6 +309,8 @@ export class PagesBackfillService {
             definitionsToUpdate,
             placementsToCreate,
             placementsToUpdate: [],
+            placementsToDelete,
+            definitionsToDelete,
             revisionPageKeys: registryKeys.filter(key => revisionPageKeys.has(key)),
         }
     }
@@ -282,8 +324,11 @@ export class PagesBackfillService {
                 definitionsUpdated: 0,
                 placementsCreated: 0,
                 placementsUpdated: 0,
+                placementsDeleted: 0,
+                definitionsDeleted: 0,
                 layoutsCreated: 0,
                 layoutsRevisionIncremented: 0,
+                customRowsChanged: 0,
             }
         }
 
@@ -297,6 +342,15 @@ export class PagesBackfillService {
                     where: { id: definition.id },
                     data: this.definitionData(definition),
                 })
+            }
+            for (const placement of plan.placementsToDelete) {
+                await tx.pageSectionPlacement.delete({ where: { id: placement.id } })
+            }
+            for (const definition of plan.definitionsToDelete) {
+                const remaining = await tx.pageSectionPlacement.count({
+                    where: { section_definition_id: definition.id },
+                })
+                if (remaining === 0) await tx.sectionDefinition.delete({ where: { id: definition.id } })
             }
 
             const layouts = await tx.pageLayout.findMany({
@@ -343,8 +397,11 @@ export class PagesBackfillService {
             definitionsUpdated: plan.definitionsToUpdate.length,
             placementsCreated: plan.placementsToCreate.length,
             placementsUpdated: plan.placementsToUpdate.length,
+            placementsDeleted: plan.placementsToDelete.length,
+            definitionsDeleted: plan.definitionsToDelete.length,
             layoutsCreated: plan.layoutsToCreate.length,
             layoutsRevisionIncremented: plan.revisionPageKeys.length,
+            customRowsChanged: 0,
             conflicts: plan.conflicts,
         }
     }

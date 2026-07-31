@@ -9,6 +9,7 @@ export type PageRegistryEntry = {
     title: string
     routePattern: string
     systemSections: PageSystemSection[]
+    includeGlobalContacts?: boolean
 }
 
 const sections = (items: Array<[string, string]>): PageSystemSection[] =>
@@ -73,7 +74,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
             ['gia-11.deadlines', 'Сроки проведения'],
             ['gia-11.results', 'Результаты'],
             ['gia-11.reports', 'Отчёты комиссий'],
-            ['gia-11.additional', 'Дополнительные материалы'],
+            ['gia-11.essay', 'Итоговое сочинение'],
+            ['gia-11.analytics', 'Аналитические материалы ЕГЭ'],
         ]),
     },
     {
@@ -111,6 +113,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
         title: 'Контакты',
         routePattern: '/o-centre/kontakty',
         systemSections: sections([['about.contacts', 'Контакты центра']]),
+        includeGlobalContacts: false,
     },
     {
         pageKey: 'resources',

@@ -210,7 +210,12 @@ describe('Pages definition/placement backfill (e2e)', () => {
             13
         )
         const contacts = await prisma.sectionDefinition.findUniqueOrThrow({ where: { key: 'global.contacts' } })
-        expect(await prisma.pageSectionPlacement.count({ where: { section_definition_id: contacts.id } })).toBe(13)
+        expect(await prisma.pageSectionPlacement.count({ where: { section_definition_id: contacts.id } })).toBe(12)
+        expect(
+            await prisma.pageSectionPlacement.count({
+                where: { page_key: 'about.contacts', section_definition_id: contacts.id },
+            })
+        ).toBe(0)
         const homePlacements = await prisma.pageSectionPlacement.findMany({
             where: { page_key: 'home' },
             orderBy: [{ sort_order: 'asc' }, { id: 'asc' }],
@@ -315,5 +320,180 @@ describe('Pages definition/placement backfill (e2e)', () => {
         expect(result).toMatchObject({ definitionsCreated: 0, placementsCreated: 0, layoutsRevisionIncremented: 0 })
         expect(await prisma.sectionDefinition.count()).toBe(before.definitions)
         expect(await prisma.pageSectionPlacement.count()).toBe(before.placements)
+    })
+
+    it('repairs managed GIA-11 sections and about contacts without touching custom rows', async () => {
+        await seedLegacyFixture()
+        const service = new PagesBackfillService(prisma)
+        await service.run('apply')
+        const giaLayout = await prisma.pageLayout.findUniqueOrThrow({ where: { page_key: 'gia.11' } })
+        const aboutContactsLayout = await prisma.pageLayout.findUniqueOrThrow({
+            where: { page_key: 'about.contacts' },
+        })
+        const contacts = await prisma.sectionDefinition.findUniqueOrThrow({ where: { key: 'global.contacts' } })
+        await prisma.pageSectionPlacement.create({
+            data: {
+                page_layout_id: aboutContactsLayout.id,
+                page_key: 'about.contacts',
+                section_definition_id: contacts.id,
+                sort_order: 1_000_000,
+            },
+        })
+        const replacementDefinitions = await prisma.sectionDefinition.findMany({
+            where: { key: { in: ['gia-11.essay', 'gia-11.analytics'] } },
+        })
+        await prisma.pageSectionPlacement.deleteMany({
+            where: { section_definition_id: { in: replacementDefinitions.map(definition => definition.id) } },
+        })
+        await prisma.sectionDefinition.deleteMany({
+            where: { id: { in: replacementDefinitions.map(definition => definition.id) } },
+        })
+        const additional = await prisma.sectionDefinition.create({
+            data: {
+                key: 'gia-11.additional',
+                type: SectionDefinitionType.PAGE_SYSTEM,
+                name: 'Additional',
+                system_renderer_key: 'gia-11.additional',
+                owner_page_key: 'gia.11',
+            },
+        })
+        await prisma.pageSectionPlacement.create({
+            data: {
+                page_layout_id: giaLayout.id,
+                page_key: 'gia.11',
+                section_definition_id: additional.id,
+                sort_order: 6,
+            },
+        })
+        const customDefinitionsBefore = await prisma.sectionDefinition.findMany({
+            where: { type: { in: ['PAGE_CUSTOM_HTML', 'GLOBAL_CUSTOM_HTML'] } },
+            orderBy: { id: 'asc' },
+        })
+        const customPlacementsBefore = await prisma.pageSectionPlacement.findMany({
+            where: { section_definition: { type: { in: ['PAGE_CUSTOM_HTML', 'GLOBAL_CUSTOM_HTML'] } } },
+            orderBy: { id: 'asc' },
+        })
+        const revisionsBefore = new Map(
+            (
+                await prisma.pageLayout.findMany({
+                    where: { page_key: { in: ['gia.11', 'about.contacts'] } },
+                    select: { page_key: true, revision: true },
+                })
+            ).map(layout => [layout.page_key, layout.revision])
+        )
+
+        const result = await service.run('apply')
+
+        expect(result).toMatchObject({
+            placementsCreated: 2,
+            placementsDeleted: 2,
+            definitionsDeleted: 1,
+            customRowsChanged: 0,
+        })
+        expect(
+            await prisma.pageSectionPlacement.findMany({
+                where: {
+                    page_key: 'gia.11',
+                    section_definition: { key: { in: ['gia-11.essay', 'gia-11.analytics'] } },
+                },
+                orderBy: { sort_order: 'asc' },
+                include: { section_definition: true },
+            })
+        ).toMatchObject([
+            { sort_order: 6, section_definition: { key: 'gia-11.essay' } },
+            { sort_order: 7, section_definition: { key: 'gia-11.analytics' } },
+        ])
+        expect(await prisma.sectionDefinition.findUnique({ where: { key: 'gia-11.additional' } })).toBeNull()
+        for (const pageKey of ['gia.11', 'about.contacts']) {
+            expect((await prisma.pageLayout.findUniqueOrThrow({ where: { page_key: pageKey } })).revision).toBe(
+                revisionsBefore.get(pageKey)! + 1
+            )
+        }
+        expect(
+            await prisma.pageSectionPlacement.count({
+                where: { page_key: 'about.contacts', section_definition_id: contacts.id },
+            })
+        ).toBe(0)
+        expect(
+            await prisma.pageSectionPlacement.count({
+                where: { section_definition_id: contacts.id, page_key: { not: 'about.contacts' } },
+            })
+        ).toBe(12)
+        expect(
+            await prisma.sectionDefinition.findMany({
+                where: { type: { in: ['PAGE_CUSTOM_HTML', 'GLOBAL_CUSTOM_HTML'] } },
+                orderBy: { id: 'asc' },
+            })
+        ).toEqual(customDefinitionsBefore)
+        expect(
+            await prisma.pageSectionPlacement.findMany({
+                where: { section_definition: { type: { in: ['PAGE_CUSTOM_HTML', 'GLOBAL_CUSTOM_HTML'] } } },
+                orderBy: { id: 'asc' },
+            })
+        ).toEqual(customPlacementsBefore)
+        expect(await service.run('apply')).toMatchObject({
+            definitionsCreated: 0,
+            placementsCreated: 0,
+            placementsDeleted: 0,
+            definitionsDeleted: 0,
+            layoutsRevisionIncremented: 0,
+            customRowsChanged: 0,
+        })
+    })
+
+    it('rolls back every write when an apply plan fails inside the transaction', async () => {
+        await seedLegacyFixture()
+        const service = new PagesBackfillService(prisma)
+        const plan = await service.analyze()
+        plan.placementsToCreate.push({
+            pageKey: 'home',
+            definitionKey: 'missing.definition.for.rollback',
+            sortOrder: 999,
+            isVisible: true,
+        })
+        const before = {
+            definitions: await prisma.sectionDefinition.count(),
+            placements: await prisma.pageSectionPlacement.count(),
+            layouts: await prisma.pageLayout.findMany({
+                select: { page_key: true, revision: true },
+                orderBy: { page_key: 'asc' },
+            }),
+        }
+
+        await expect(service.apply(plan)).rejects.toThrow(
+            'BACKFILL_PLAN_REFERENCE_MISSING:home:missing.definition.for.rollback'
+        )
+        expect(await prisma.sectionDefinition.count()).toBe(before.definitions)
+        expect(await prisma.pageSectionPlacement.count()).toBe(before.placements)
+        expect(
+            await prisma.pageLayout.findMany({
+                select: { page_key: true, revision: true },
+                orderBy: { page_key: 'asc' },
+            })
+        ).toEqual(before.layouts)
+    })
+
+    it('keeps concurrent invocations safe after the canonical state converges', async () => {
+        await seedLegacyFixture()
+        const firstService = new PagesBackfillService(prisma)
+        await firstService.run('apply')
+
+        const [left, right] = await Promise.all([
+            new PagesBackfillService(prisma).run('apply'),
+            new PagesBackfillService(prisma).run('apply'),
+        ])
+
+        for (const result of [left, right]) {
+            expect(result).toMatchObject({
+                applied: true,
+                definitionsCreated: 0,
+                definitionsUpdated: 0,
+                placementsCreated: 0,
+                placementsDeleted: 0,
+                definitionsDeleted: 0,
+                layoutsRevisionIncremented: 0,
+                customRowsChanged: 0,
+            })
+        }
     })
 })

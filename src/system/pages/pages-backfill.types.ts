@@ -26,8 +26,11 @@ export interface PagesBackfillReport {
     definitionsUpdated: number
     placementsCreated: number
     placementsUpdated: number
+    placementsDeleted: number
+    definitionsDeleted: number
     layoutsCreated: number
     layoutsRevisionIncremented: number
+    customRowsChanged: number
     conflicts: PagesBackfillConflict[]
 }
 
@@ -56,5 +59,15 @@ export interface PagesBackfillPlan {
         isVisible: boolean
     }>
     placementsToUpdate: Array<never>
+    placementsToDelete: Array<{
+        id: number
+        pageKey: string
+        definitionId: number
+        definitionKey: string
+    }>
+    definitionsToDelete: Array<{
+        id: number
+        key: string
+    }>
     revisionPageKeys: string[]
 }

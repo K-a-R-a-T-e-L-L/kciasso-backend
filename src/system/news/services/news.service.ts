@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { News, NewsCategory, Prisma, User } from '@prisma/client'
+import { News, NewsCategory, Prisma, PublicationStatus, User } from '@prisma/client'
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'
 
 import { ErrorCodeEnum } from '../../../_helpers/enums/validator/error.code.enum'
 import { ErrorDto } from '../../../_helpers/errors/error.dto'
 import { PrismaService } from '../../../prisma/prisma.service'
 import { AdminNewsCategoryDto } from '../dto/admin-news-category.dto'
-import { AdminNewsQueryDto } from '../dto/admin-news-query.dto'
+import { AdminNewsQueryDto, AdminNewsSort, AdminNewsStatusFilter } from '../dto/admin-news-query.dto'
 import { AdminNewsDto } from '../dto/admin-news.dto'
 import { CreateNewsCategoryDto } from '../dto/create-news-category.dto'
 import { CreateNewsDto } from '../dto/create-news.dto'
@@ -103,9 +103,13 @@ export class NewsService {
     }
 
     async getAdminNews(query: AdminNewsQueryDto): Promise<PaginatedAdminNewsDto> {
+        if (query.status !== undefined && query.isPublished !== undefined) {
+            throw new BadRequestException('NEWS_STATUS_FILTER_CONFLICT')
+        }
         const page = query.page ?? 1
         const limit = query.limit ?? 10
         const where = this.buildAdminNewsWhere(query)
+        const orderBy = this.buildAdminNewsOrderBy(query.sort)
 
         const [items, total] = await this.prisma.$transaction([
             this.prisma.news.findMany({
@@ -120,7 +124,7 @@ export class NewsService {
                         },
                     },
                 },
-                orderBy: [{ published_at: 'desc' }, { created_at: 'desc' }],
+                orderBy,
                 skip: (page - 1) * limit,
                 take: limit,
             }),
@@ -499,6 +503,11 @@ export class NewsService {
     }
 
     private buildAdminNewsWhere(query: AdminNewsQueryDto): Prisma.NewsWhereInput {
+        const statusMap: Record<AdminNewsStatusFilter, PublicationStatus> = {
+            [AdminNewsStatusFilter.DRAFT]: PublicationStatus.DRAFT,
+            [AdminNewsStatusFilter.SCHEDULED]: PublicationStatus.SCHEDULED,
+            [AdminNewsStatusFilter.PUBLISHED]: PublicationStatus.PUBLISHED,
+        }
         return {
             deleted_at: null,
             ...(query.category
@@ -511,6 +520,11 @@ export class NewsService {
             ...(query.isPublished !== undefined
                 ? {
                       is_published: query.isPublished,
+                  }
+                : {}),
+            ...(query.status !== undefined
+                ? {
+                      publication_status: statusMap[query.status],
                   }
                 : {}),
             ...(query.search
@@ -538,6 +552,19 @@ export class NewsService {
                   }
                 : {}),
         }
+    }
+
+    private buildAdminNewsOrderBy(sort: AdminNewsSort | undefined): Prisma.NewsOrderByWithRelationInput[] {
+        if (sort === AdminNewsSort.NEWEST) {
+            return [{ published_at: { sort: 'desc', nulls: 'last' } }, { created_at: 'desc' }, { id: 'asc' }]
+        }
+        if (sort === AdminNewsSort.OLDEST) {
+            return [{ published_at: { sort: 'asc', nulls: 'first' } }, { created_at: 'asc' }, { id: 'asc' }]
+        }
+        if (sort === AdminNewsSort.TITLE) {
+            return [{ title: 'asc' }, { id: 'asc' }]
+        }
+        return [{ published_at: 'desc' }, { created_at: 'desc' }, { id: 'asc' }]
     }
 
     private resolvePublishedAt(isPublished: boolean, publishedAt?: Date) {
